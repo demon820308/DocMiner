@@ -19,8 +19,14 @@ function startBackend() {
     } else {
       backendPath = path.join(process.resourcesPath, 'backend', 'fast_api');
     }
-    console.log(`Starting packaged backend: ${backendPath}`);
-    pyProcess = spawn(backendPath, ['--port', PORT.toString()]);
+    
+    const fs = require('fs');
+    if (fs.existsSync(backendPath)) {
+      console.log(`Starting packaged backend: ${backendPath}`);
+      pyProcess = spawn(backendPath, ['--port', PORT.toString()]);
+    } else {
+      console.log(`Packaged backend binary not found at ${backendPath}. Assuming local Python server is running separately.`);
+    }
   } else {
     // In development, run the local python script using the system python interpreter
     const rootDir = path.join(__dirname, '..', '..');
@@ -34,17 +40,20 @@ function startBackend() {
     });
   }
 
-  pyProcess.stdout.on('data', (data) => {
-    console.log(`[Backend]: ${data}`);
-  });
+  if (pyProcess) {
+    pyProcess.stdout.on('data', (data) => {
+      console.log(`[Backend]: ${data}`);
+    });
 
-  pyProcess.stderr.on('data', (data) => {
-    console.error(`[Backend Error]: ${data}`);
-  });
+    pyProcess.stderr.on('data', (data) => {
+      console.error(`[Backend Error]: ${data}`);
+    });
 
-  pyProcess.on('close', (code) => {
-    console.log(`Backend process exited with code ${code}`);
-  });
+    pyProcess.on('close', (code) => {
+      console.log(`Backend process exited with code ${code}`);
+      pyProcess = null;
+    });
+  }
 }
 
 function createWindow() {
