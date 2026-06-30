@@ -1,0 +1,40 @@
+{
+  "name": "docminer",
+  "version": "1.0.0",
+  "description": "DocMiner Desktop Client",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "keywords": [
+    "docminer",
+    "pdf",
+    "parser",
+    "desktop"
+  ],
+  "author": "DocMiner Team",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.demon.docminer",
+    "productName": "DocMiner",
+    "icon": "assets/logo.png",
+    "files": [
+      "**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "directories": {
+      "output": "dist"
+    }
+  }
+}

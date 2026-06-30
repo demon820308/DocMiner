@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>DocMiner</title>
+    <style>
+      body {
+        background-color: #181715; /* Matching app's dark sidebar theme */
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+        overflow: hidden;
+        user-select: none;
+      }
+
+      /* Logo Wrapper */
+      .logo-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 120px;
+        height: 120px;
+        margin-bottom: 24px;
+      }
+
+      .logo-svg {
+        width: 100px;
+        height: 100px;
+      }
+
+      /* SVG Path Drawing Animations */
+      .doc-path {
+        stroke-dasharray: 300;
+        stroke-dashoffset: 300;
+        animation: drawPath 2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+      }
+
+      .fold-path {
+        stroke-dasharray: 60;
+        stroke-dashoffset: 60;
+        animation: drawPath 1.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+        animation-delay: 0.4s;
+      }
+
+      .gem-path {
+        stroke-dasharray: 150;
+        stroke-dashoffset: 150;
+        animation: drawPath 2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+        animation-delay: 0.8s;
+      }
+
+      .gem-facet {
+        stroke-dasharray: 100;
+        stroke-dashoffset: 100;
+        animation: drawPath 1.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+        animation-delay: 1.2s;
+      }
+
+      @keyframes drawPath {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+
+      /* Glow Circle Pulse */
+      .glow-circle {
+        transform-origin: center;
+        animation: glowPulse 3s infinite ease-in-out;
+      }
+
+      @keyframes glowPulse {
+        0%, 100% {
+          opacity: 0.12;
+          transform: scale(0.9);
+        }
+        50% {
+          opacity: 0.28;
+          transform: scale(1.15);
+        }
+      }
+
+      /* Typography */
+      .title-container {
+        text-align: center;
+        opacity: 0;
+        animation: fadeIn 1.2s ease-out forwards;
+        animation-delay: 0.6s;
+      }
+
+      .title {
+        color: #ffffff;
+        font-size: 1.8rem;
+        font-weight: 500;
+        letter-spacing: 0.15em;
+        margin: 0 0 6px 0;
+        font-family: 'Cormorant Garamond', Georgia, serif;
+      }
+
+      .subtitle {
+        color: #8c8c88;
+        font-size: 0.75rem;
+        letter-spacing: 0.25em;
+        text-transform: uppercase;
+        margin: 0;
+      }
+
+      @keyframes fadeIn {
+        to {
+          opacity: 1;
+        }
+      }
+
+      /* Indeterminate Progress Bar */
+      .progress-container {
+        width: 140px;
+        height: 2px;
+        background-color: rgba(204, 120, 92, 0.1);
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: 36px;
+        opacity: 0;
+        animation: fadeIn 1.2s ease-out forwards;
+        animation-delay: 1s;
+      }
+
+      .progress-bar {
+        width: 40%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, #cc785c, transparent);
+        animation: indeterminate 1.8s infinite linear;
+      }
+
+      @keyframes indeterminate {
+        0% {
+          transform: translateX(-150%);
+        }
+        100% {
+          transform: translateX(250%);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="logo-wrapper">
+      <svg class="logo-svg" viewBox="0 0 100 100" fill="none">
+        <!-- Radial Glow -->
+        <circle class="glow-circle" cx="50" cy="50" r="32" fill="url(#glowGradient)" />
+        
+        <!-- Document outline -->
+        <path class="doc-path" d="M 32 15 H 58 L 74 31 V 85 H 32 Z" stroke="#cc785c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+        <path class="fold-path" d="M 58 15 V 31 H 74" stroke="#cc785c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+        
+        <!-- Gemstone / Diamond -->
+        <path class="gem-path" d="M 53 43 L 64 52 L 53 72 L 42 52 Z" stroke="#cc785c" stroke-width="2" stroke-linejoin="round" />
+        <path class="gem-facet" d="M 42 52 H 64 L 53 72 Z" stroke="#cc785c" stroke-width="1.5" stroke-linejoin="round" />
+        <path class="gem-shine" d="M 53 43 V 72" stroke="#cc785c" stroke-width="1.5" opacity="0.3" stroke-linecap="round" />
+
+        <defs>
+          <radialGradient id="glowGradient" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#cc785c" />
+            <stop offset="100%" stop-color="#cc785c" stop-opacity="0" />
+          </radialGradient>
+        </defs>
+      </svg>
+    </div>
+
+    <div class="title-container">
+      <h1 class="title">DocMiner</h1>
+      <p class="subtitle">智能文档解析与挖掘</p>
+    </div>
+
+    <div class="progress-container">
+      <div class="progress-bar"></div>
+    </div>
+  </body>
+</html>

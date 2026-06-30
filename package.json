@@ -1,0 +1,8 @@
+{
+  "name": "docminer-root",
+  "private": true,
+  "scripts": {
+    "start": "npm --prefix projects/mineru-web start",
+    "desktop-install": "npm --prefix projects/mineru-web install"
+  }
+}

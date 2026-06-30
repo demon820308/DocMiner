@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocMiner — 智能文档解析</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- KaTeX CSS -->
+    <link rel="stylesheet" href="/lib/katex.min.css">
+    
+    <!-- App CSS -->
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <button class="sidebar-toggle" id="sidebarToggle" title="收起侧栏">
+                <span class="toggle-icon"><<</span>
+            </button>
+            <div class="logo">
+                <img class="logo-icon" src="/assets/logo.png" alt="DocMiner">
+                <span class="logo-text">DocMiner</span>
+            </div>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <button class="btn btn-primary btn-new-parse" id="btnNewParse" title="新解析">
+                <span class="btn-icon">+</span>
+                <span class="btn-text">新解析</span>
+            </button>
+            
+            <div class="nav-links">
+                <a href="#/tasks" class="nav-link" data-page="tasks" title="任务管理">
+                    <span class="nav-icon">📋</span>
+                    <span class="nav-text">任务管理</span>
+                </a>
+                <a href="#/favorites" class="nav-link" data-page="favorites" title="我的收藏">
+                    <span class="nav-icon">⭐</span>
+                    <span class="nav-text">我的收藏</span>
+                </a>
+            </div>
+        </nav>
+        
+        <div class="sidebar-tasks" id="sidebarTasks">
+            <div class="tasks-header">
+                <span class="tasks-title">最近任务</span>
+                <span class="tasks-count" id="tasksCount">0</span>
+            </div>
+            <div class="tasks-list" id="tasksList">
+                <!-- 动态渲染任务列表 -->
+            </div>
+        </div>
+        
+        <div class="sidebar-footer">
+            <button class="btn btn-icon-only" id="btnSettings" title="设置">
+                <span>⚙️</span>
+            </button>
+            <span class="version">v1.0.0</span>
+        </div>
+    </aside>
+    
+    <!-- Main Content -->
+    <main class="main-content" id="mainContent">
+        <!-- Page: Parse (智能解析主页) -->
+        <section class="screen screen-parse" id="screenParse">
+            <div class="page-header">
+                <h1 class="page-title">智能解析</h1>
+                <p class="page-subtitle">上传 PDF 或图片，AI 自动识别文档结构</p>
+            </div>
+            
+            <!-- Upload Area -->
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-dropzone" id="dropzone">
+                    <div class="dropzone-content">
+                        <div class="dropzone-icon">📄</div>
+                        <div class="dropzone-text">
+                            <span class="dropzone-primary">拖拽文件到这里</span>
+                            <span class="dropzone-secondary">或 <button class="btn-link" id="btnSelectFile">点击选择文件</button></span>
+                        </div>
+                        <div class="dropzone-hint">支持 PDF、PNG、JPG 格式</div>
+                    </div>
+                    <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg" hidden>
+                </div>
+                <div class="upload-progress" id="uploadProgress" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <span class="progress-text" id="progressText">上传中...</span>
+                </div>
+            </div>
+            
+            <!-- Strategy Banner -->
+            <div class="strategy-banner">
+                <div class="banner-icon">💡</div>
+                <div class="banner-content">
+                    <span class="banner-title">服务策略</span>
+                    <span class="banner-desc">当前模式：Pipeline（OCR + 版面分析 + 公式识别）</span>
+                </div>
+            </div>
+            
+
+        </section>
+        
+        <!-- Page: Viewer (双栏对比) -->
+        <section class="screen screen-viewer" id="screenViewer" style="display: none;">
+            <div class="viewer-toolbar">
+                <div class="toolbar-left">
+                    <button class="btn btn-icon-only" id="btnBack" title="返回">
+                        <span>←</span>
+                    </button>
+                    <span class="viewer-title" id="viewerTitle">文档预览</span>
+                </div>
+                <div class="toolbar-center">
+                    <div class="zoom-controls">
+                        <button class="btn btn-icon-only" id="btnZoomOut" title="缩小">−</button>
+                        <input type="range" id="zoomSlider" min="50" max="200" value="100" class="zoom-slider">
+                        <button class="btn btn-icon-only" id="btnZoomIn" title="放大">+</button>
+                        <span class="zoom-value" id="zoomValue">100%</span>
+                    </div>
+                    <div class="page-controls">
+                        <button class="btn btn-icon-only" id="btnPrevPage" title="上一页">‹</button>
+                        <span class="page-info">
+                            <span id="currentPage">1</span> / <span id="totalPages">1</span>
+                        </span>
+                        <button class="btn btn-icon-only" id="btnNextPage" title="下一页">›</button>
+                    </div>
+                    <button class="btn btn-icon-only" id="btnRotate" title="旋转">↻</button>
+
+                </div>
+                <div class="toolbar-right">
+                    <button class="btn btn-icon-only" id="btnFavorite" title="收藏">☆</button>
+                    <button class="btn btn-icon-only" id="btnOpenFolder" title="打开文件夹">📁</button>
+                </div>
+            </div>
+            
+            <div class="viewer-content">
+                <div class="viewer-pane pane-left" id="paneLeft">
+                    <div class="pane-header">
+                        <span class="pane-title">原始文档</span>
+                    </div>
+                    <div class="pane-body">
+                        <!-- Loading skeleton -->
+                        <div class="pane-loading" id="paneLeftLoading">
+                            <div class="skeleton-line" style="width: 80%;"></div>
+                            <div class="skeleton-line" style="width: 60%;"></div>
+                            <div class="skeleton-box"></div>
+                            <div class="skeleton-line" style="width: 90%;"></div>
+                            <div class="skeleton-line" style="width: 70%;"></div>
+                            <div class="skeleton-line" style="width: 85%;"></div>
+                            <div class="skeleton-line" style="width: 50%;"></div>
+                        </div>
+                        <div class="canvas-container" id="canvasContainer" style="display: none; position: relative; margin: 0 auto;">
+                            <canvas id="pdfCanvas"></canvas>
+                            <div class="bbox-layer" id="bboxLayer"></div>
+                        </div>
+                        <div class="bbox-tooltip" id="bboxTooltip" style="display: none;">
+                            <div class="tooltip-type" id="tooltipType"></div>
+                            <div class="tooltip-text" id="tooltipText"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="viewer-divider"></div>
+                <div class="viewer-pane pane-right" id="paneRight">
+                    <div class="pane-header">
+                        <div class="pane-header-tabs">
+                            <button class="pane-tab active" data-tab="markdown">Markdown</button>
+                            <button class="pane-tab" data-tab="json">JSON</button>
+                        </div>
+                        <div class="pane-header-actions" id="paneRightActions" style="display: none;">
+                            <button class="btn btn-sm btn-primary" id="btnDownloadPdf" title="导出 PDF 文件，方便打印">
+                                <span class="btn-icon">🖨️</span>
+                                <span class="btn-text">导出 PDF</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="pane-body">
+                        <!-- Loading indicator -->
+                        <div class="pane-loading" id="paneRightLoading">
+                            <div class="loading-spinner"></div>
+                            <div class="loading-text" id="loadingText">正在加载...</div>
+                        </div>
+                        <div class="markdown-content" id="markdownContent" style="display: none;"></div>
+                        <pre class="json-content" id="jsonContent" style="display: none;"></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Page: Tasks (任务管理) -->
+        <section class="screen screen-tasks" id="screenTasks" style="display: none;">
+            <div class="page-header">
+                <h1 class="page-title">任务管理</h1>
+                <p class="page-subtitle">查看和管理所有解析任务</p>
+            </div>
+            
+            <div class="tasks-toolbar">
+                <div class="search-box">
+                    <input type="text" id="taskSearch" placeholder="搜索文件名..." class="search-input">
+                </div>
+                <div class="tasks-filters">
+                    <select id="statusFilter" class="filter-select">
+                        <option value="all">所有状态</option>
+                        <option value="pending">等待中</option>
+                        <option value="processing">处理中</option>
+                        <option value="completed">已完成</option>
+                        <option value="failed">失败</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="tasks-table-container">
+                <table class="tasks-table" id="tasksTable">
+                    <thead>
+                        <tr>
+                            <th>文件名</th>
+                            <th>大小</th>
+                            <th>状态</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tasksTableBody">
+                        <!-- 动态渲染 -->
+                    </tbody>
+                </table>
+                <div class="tasks-empty" id="tasksEmpty" style="display: none;">
+                    <div class="empty-icon">📋</div>
+                    <div class="empty-text">暂无任务</div>
+                    <button class="btn btn-primary" id="btnStartParse">开始解析</button>
+                </div>
+            </div>
+            
+            <div class="tasks-pagination" id="tasksPagination">
+                <div class="pagination-info">
+                    共 <span id="totalTasks">0</span> 条
+                </div>
+                <div class="pagination-controls">
+                    <select id="pageSize" class="page-size-select">
+                        <option value="10">10 条/页</option>
+                        <option value="20">20 条/页</option>
+                        <option value="50">50 条/页</option>
+                    </select>
+                    <button class="btn btn-icon-only" id="btnPrevPage" title="上一页" disabled>‹</button>
+                    <span class="page-numbers" id="pageNumbers"></span>
+                    <button class="btn btn-icon-only" id="btnNextPage" title="下一页">›</button>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Page: Favorites (我的收藏) -->
+        <section class="screen screen-favorites" id="screenFavorites" style="display: none;">
+            <div class="page-header">
+                <h1 class="page-title">我的收藏</h1>
+                <p class="page-subtitle">收藏的重要文档</p>
+            </div>
+            
+            <div class="favorites-empty" id="favoritesEmpty">
+                <div class="empty-illustration">
+                    <div class="empty-icon">⭐</div>
+                    <div class="empty-stars">
+                        <span>✦</span>
+                        <span>✦</span>
+                        <span>✦</span>
+                    </div>
+                </div>
+                <div class="empty-content">
+                    <h3 class="empty-title">暂无收藏</h3>
+                    <p class="empty-desc">您可以收藏重要的解析文档，方便快速访问</p>
+                </div>
+            </div>
+
+            <div class="tasks-table-container" id="favoritesTableContainer" style="display: none;">
+                <table class="tasks-table" id="favoritesTable">
+                    <thead>
+                        <tr>
+                            <th>文件名</th>
+                            <th>大小</th>
+                            <th>状态</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="favoritesTableBody">
+                        <!-- 动态渲染 -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+    
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal" style="display: none;">
+        <div class="modal settings-modal">
+            <div class="modal-header">
+                <h2 class="modal-title">设置</h2>
+                <button class="btn btn-icon-only" id="btnCloseSettings" title="关闭">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-layout">
+                    <div class="settings-sidebar">
+                        <button class="settings-nav-item active" data-tab="params">参数设置</button>
+                        <button class="settings-nav-item" data-tab="update">软件更新</button>
+                    </div>
+                    <div class="settings-content">
+                        <!-- System Settings -->
+                        <div class="settings-tab" id="tabSystem" style="display: none;">
+                            <div class="settings-section">
+                                <h3 class="section-title">用户信息</h3>
+                                <div class="setting-item">
+                                    <label class="setting-label">用户 ID</label>
+                                    <div class="setting-value">
+                                        <code class="user-id" id="userId">-</code>
+                                        <button class="btn btn-sm" id="btnCopyUserId">复制</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="settings-section">
+                                <h3 class="section-title">使用配额</h3>
+                                <div class="quota-meter">
+                                    <div class="quota-bar">
+                                        <div class="quota-fill" style="width: 30%"></div>
+                                    </div>
+                                    <span class="quota-text">30 / 100 次</span>
+                                </div>
+                            </div>
+                            <div class="settings-section">
+                                <h3 class="section-title">快捷键</h3>
+                                <div class="shortcuts-list">
+                                    <div class="shortcut-item">
+                                        <span class="shortcut-desc">打开文件</span>
+                                        <kbd class="shortcut-key">Ctrl+Shift+O</kbd>
+                                    </div>
+                                    <div class="shortcut-item">
+                                        <span class="shortcut-desc">上传文件</span>
+                                        <kbd class="shortcut-key">Ctrl+Shift+U</kbd>
+                                    </div>
+                                    <div class="shortcut-item">
+                                        <span class="shortcut-desc">打开设置</span>
+                                        <kbd class="shortcut-key">Ctrl+Shift+S</kbd>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Params Settings -->
+                        <div class="settings-tab" id="tabParams">
+                            <div class="settings-section">
+                                <h3 class="section-title">模型配置</h3>
+                                <div class="setting-item">
+                                    <label class="setting-label">模型版本</label>
+                                    <div class="setting-control">
+                                        <label class="radio-label">
+                                            <input type="radio" name="modelVersion" value="hybrid"> Hybrid
+                                        </label>
+                                        <label class="radio-label">
+                                            <input type="radio" name="modelVersion" value="vlm" checked> VLM
+                                        </label>
+                                        <label class="radio-label">
+                                            <input type="radio" name="modelVersion" value="pipeline"> Pipeline
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="settings-section">
+                                <h3 class="section-title">识别功能</h3>
+                                <div class="setting-item">
+                                    <label class="setting-label">公式识别</label>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="enableFormula" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="setting-item">
+                                    <label class="setting-label">表格识别</label>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="enableTable" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="setting-item">
+                                    <label class="setting-label">强制 OCR</label>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="forceOcr">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="settings-section">
+                                <h3 class="section-title">语言设置</h3>
+                                <div class="setting-item">
+                                    <label class="setting-label">文档语言</label>
+                                    <select id="language" class="setting-select">
+                                        <option value="auto">自动检测</option>
+                                        <option value="zh">中文</option>
+                                        <option value="en">英文</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="settings-section">
+                                <h3 class="section-title">输出设置</h3>
+                                <div class="setting-item">
+                                    <label class="setting-label">保存路径</label>
+                                    <div class="setting-value">
+                                        <code class="output-dir" id="outputDir">./output</code>
+                                        <button class="btn btn-sm" id="btnChangeDir">更换</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="settings-section">
+                                <h3 class="section-title">模型下载</h3>
+                                <div class="setting-item">
+                                    <label class="setting-label">下载源</label>
+                                    <select id="modelSource" class="setting-select">
+                                        <option value="huggingface">HuggingFace</option>
+                                        <option value="modelscope">ModelScope</option>
+                                    </select>
+                                </div>
+                                <div class="setting-item">
+                                    <label class="setting-label">自定义缓存目录</label>
+                                    <div class="setting-value">
+                                        <input type="text" id="modelCacheDir" class="setting-input" placeholder="留空使用默认路径">
+                                        <button class="btn btn-sm" id="btnChangeModelDir">选择</button>
+                                    </div>
+                                </div>
+                                <div class="setting-hint">
+                                    <span class="hint-icon">💡</span>
+                                    <span class="hint-text">国内推荐使用 ModelScope，速度更快</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Update Settings -->
+                        <div class="settings-tab" id="tabUpdate" style="display: none;">
+                            <div class="update-placeholder">
+                                <div class="update-icon">🔄</div>
+                                <h3 class="update-title">软件更新</h3>
+                                <p class="update-desc">当前版本 v1.0.0</p>
+                                <p class="update-hint">自动更新检测功能即将上线</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+    
+    <!-- Libs -->
+    <script type="module">
+        import * as pdfjsLib from '/lib/pdf.min.js';
+        window.pdfjsLib = pdfjsLib;
+    </script>
+    <script src="/lib/jszip.min.js"></script>
+    <script src="/lib/marked.min.js"></script>
+    <script src="/lib/katex.min.js"></script>
+    
+    <!-- App -->
+    <script type="module" src="/app.js"></script>
+</body>
+</html>
