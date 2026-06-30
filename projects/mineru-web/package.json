@@ -27,6 +27,7 @@
   "build": {
     "appId": "com.demon.docminer",
     "productName": "DocMiner",
+    "asar": false,
     "icon": "assets/logo.png",
     "files": [
       "**/*"

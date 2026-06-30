@@ -1654,6 +1654,10 @@ async def health_check():
 
 # Mount static files for frontend (must be after all route definitions)
 frontend_dir = Path(__file__).parent.parent.parent / "projects" / "mineru-web"
+if not frontend_dir.exists():
+    # Fallback to production resources/app/ directory if packaged
+    frontend_dir = Path(__file__).parent.parent.parent / "app"
+
 if frontend_dir.exists():
     app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
