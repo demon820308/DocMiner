@@ -31,6 +31,17 @@
     "files": [
       "**/*"
     ],
+    "extraResources": [
+      {
+        "from": "../../mineru",
+        "to": "mineru",
+        "filter": [
+          "**/*",
+          "!**/*.pyc",
+          "!**/__pycache__"
+        ]
+      }
+    ],
     "win": {
       "target": "nsis"
     },

@@ -22,10 +22,18 @@ function startBackend() {
     
     const fs = require('fs');
     if (fs.existsSync(backendPath)) {
-      console.log(`Starting packaged backend: ${backendPath}`);
+      console.log(`Starting packaged backend binary: ${backendPath}`);
       pyProcess = spawn(backendPath, ['--port', PORT.toString()]);
     } else {
-      console.log(`Packaged backend binary not found at ${backendPath}. Assuming local Python server is running separately.`);
+      // Fallback: Try to run python script copied to resources
+      const scriptPath = path.join(process.resourcesPath, 'mineru', 'cli', 'fast_api.py');
+      if (fs.existsSync(scriptPath)) {
+        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+        console.log(`Starting bundled Python backend script: ${pythonCmd} ${scriptPath}`);
+        pyProcess = spawn(pythonCmd, [scriptPath, '--port', PORT.toString()]);
+      } else {
+        console.log(`Neither binary nor Python script found in resources. Assuming local Python server is running separately.`);
+      }
     }
   } else {
     // In development, run the local python script using the system python interpreter
