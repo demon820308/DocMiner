@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "DocMiner Desktop Client",
   "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/demon820308/DocMiner.git"
+  },
   "scripts": {
     "start": "electron .",
     "pack": "electron-builder --dir",
