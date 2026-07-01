@@ -14,7 +14,7 @@ const DEFAULT_SETTINGS = {
     enableFormula: true,
     enableTable: true,
     language: 'auto',
-    outputDir: './output',
+    outputDir: '~/DocMiner/output',
     userId: '-',
     modelSource: 'huggingface',
     modelCacheDir: '',
@@ -51,9 +51,17 @@ let middleJson = null;
 let currentImageBlob = null;
 let currentRenderTask = null;
 let currentMdContent = '';
+let homeDir = '';
 
 // ==================== DOM Ready ====================
 document.addEventListener('DOMContentLoaded', () => {
+    if (window.electronAPI && window.electronAPI.getHomeDir) {
+        window.electronAPI.getHomeDir().then(dir => {
+            homeDir = dir;
+        }).catch(err => {
+            console.error('Failed to get home dir:', err);
+        });
+    }
     initAppVersion();
     initRouter();
     initSidebar();
@@ -1241,7 +1249,12 @@ function loadSettingsToUI() {
 
     // System settings
     document.getElementById('userId').textContent = settings.userId;
-    document.getElementById('outputDir').textContent = settings.outputDir;
+    
+    let displayDir = settings.outputDir;
+    if (displayDir.startsWith('~/')) {
+        displayDir = homeDir ? displayDir.replace('~', homeDir) : displayDir;
+    }
+    document.getElementById('outputDir').textContent = displayDir;
 
     // Params settings
     document.querySelector(`input[name="modelVersion"][value="${settings.modelVersion}"]`).checked = true;
@@ -1810,7 +1823,12 @@ function updateTaskOutputDir(taskId, outputDir) {
 function getSettings() {
     try {
         const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-        return data ? { ...DEFAULT_SETTINGS, ...JSON.parse(data) } : { ...DEFAULT_SETTINGS };
+        let settings = data ? { ...DEFAULT_SETTINGS, ...JSON.parse(data) } : { ...DEFAULT_SETTINGS };
+        // Migrate ./output to ~/DocMiner/output to prevent file loss on reinstallation
+        if (settings.outputDir === './output') {
+            settings.outputDir = '~/DocMiner/output';
+        }
+        return settings;
     } catch {
         return { ...DEFAULT_SETTINGS };
     }

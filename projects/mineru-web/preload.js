@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Software Update APIs
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  getHomeDir: () => ipcRenderer.invoke('get-home-dir'),
   openExternal: (url) => ipcRenderer.send('open-external', url),
   startDownload: (url) => ipcRenderer.send('start-download', url),
   cancelDownload: () => ipcRenderer.send('cancel-download'),

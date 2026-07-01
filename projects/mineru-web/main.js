@@ -212,6 +212,11 @@ app.on('browser-window-created', (event, window) => {
   }
 });
 
+// Get system home directory
+ipcMain.handle('get-home-dir', () => {
+  return app.getPath('home');
+});
+
 // Programmatic PDF Export handler to bypass browser printer Spooler block
 ipcMain.on('save-as-pdf', (event) => {
   const targetWindow = childWindow || BrowserWindow.fromWebContents(event.sender);
