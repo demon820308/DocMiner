@@ -20,7 +20,12 @@ const DEFAULT_SETTINGS = {
     modelCacheDir: '',
     localPipelineDir: '',
     localVlmDir: '',
-    enableNotificationSound: true
+    enableNotificationSound: true,
+    llmEnable: false,
+    llmApiKey: '',
+    llmBaseUrl: '',
+    llmModel: '',
+    llmEnableThinking: false
 };
 
 const STATUS = {
@@ -71,7 +76,12 @@ document.addEventListener('DOMContentLoaded', () => {
         settings.modelSource || 'huggingface', 
         settings.modelCacheDir || '',
         settings.localPipelineDir || '',
-        settings.localVlmDir || ''
+        settings.localVlmDir || '',
+        settings.llmEnable || false,
+        settings.llmApiKey || '',
+        settings.llmBaseUrl || '',
+        settings.llmModel || '',
+        settings.llmEnableThinking || false
     );
 
     // Check for any active downloads on startup
@@ -1302,6 +1312,38 @@ function initSettings() {
             }
         }
     });
+
+    // Toggle LLM settings visibility
+    document.getElementById('llmEnable')?.addEventListener('change', (e) => {
+        toggleLlmFields(e.target.checked);
+    });
+
+    // Auto-fetch remote models on key/url change or blur
+    document.getElementById('llmApiKey')?.addEventListener('blur', () => {
+        triggerModelFetch();
+    });
+    document.getElementById('llmBaseUrl')?.addEventListener('blur', () => {
+        triggerModelFetch();
+    });
+
+    // Custom model name text input toggle
+    document.getElementById('btnToggleCustomModel')?.addEventListener('click', () => {
+        const select = document.getElementById('llmModel');
+        const customInput = document.getElementById('llmModelCustom');
+        const btn = document.getElementById('btnToggleCustomModel');
+        if (select && customInput && btn) {
+            if (select.style.display === 'none') {
+                select.style.display = 'block';
+                customInput.style.display = 'none';
+                btn.textContent = '自定义';
+            } else {
+                select.style.display = 'none';
+                customInput.style.display = 'block';
+                btn.textContent = '下拉选择';
+            }
+        }
+    });
+
     // Start download for Pipeline Model
     document.getElementById('btnDownloadPipelineModel')?.addEventListener('click', () => {
         startModelDownload('pipeline');
@@ -1338,6 +1380,97 @@ function toggleLocalDirFields(source) {
         
         // Check local model download status in cache
         checkOfflineModelsStatus();
+    }
+}
+
+function toggleLlmFields(enable) {
+    const container = document.getElementById('llmConfigContainer');
+    if (container) {
+        container.style.display = enable ? 'flex' : 'none';
+    }
+}
+
+async function triggerModelFetch(silent = false) {
+    const apiKey = document.getElementById('llmApiKey')?.value || '';
+    const baseUrl = document.getElementById('llmBaseUrl')?.value || '';
+    
+    if (!apiKey || !baseUrl) {
+        return; // Only fetch when both are present
+    }
+    
+    const select = document.getElementById('llmModel');
+    if (!select) return;
+    
+    // Save current selected model
+    const currentModel = select.value || getSettings().llmModel || '';
+    
+    // Set loading state in UI
+    select.innerHTML = '<option value="">正在获取可用模型列表...</option>';
+    select.disabled = true;
+    
+    try {
+        const response = await fetch('/api/fetch_llm_models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: apiKey, base_url: baseUrl })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Remote models API returned error');
+        }
+        
+        const data = await response.json();
+        const models = data.models || [];
+        
+        if (models.length === 0) {
+            throw new Error('No models found');
+        }
+        
+        // Populate options
+        select.innerHTML = '';
+        models.forEach(modelId => {
+            const opt = document.createElement('option');
+            opt.value = modelId;
+            opt.textContent = modelId;
+            select.appendChild(opt);
+        });
+        
+        // Restore previous selection if possible
+        if (currentModel && models.includes(currentModel)) {
+            select.value = currentModel;
+        } else if (models.length > 0) {
+            select.value = models[0];
+        }
+        
+        if (!silent) {
+            showToast('已同步获取可用模型列表', 'success');
+        }
+    } catch (err) {
+        console.error('Failed to sync remote models:', err);
+        if (!silent) {
+            showToast('获取云端模型列表失败，使用常用默认模型列表', 'warning');
+        }
+        
+        // Fallback to common OpenAI / DeepSeek / Qwen model names
+        const fallbacks = ['deepseek-chat', 'deepseek-reasoner', 'gpt-4o', 'qwen-plus', 'qwen-max'];
+        select.innerHTML = '';
+        fallbacks.forEach(modelId => {
+            const opt = document.createElement('option');
+            opt.value = modelId;
+            opt.textContent = modelId;
+            select.appendChild(opt);
+        });
+        
+        if (currentModel && fallbacks.includes(currentModel)) {
+            select.value = currentModel;
+        } else {
+            select.value = fallbacks[0];
+        }
+    } finally {
+        select.disabled = false;
+        if (!silent) {
+            saveSettingsFromUI();
+        }
     }
 }
 
@@ -1530,7 +1663,7 @@ function startModelDownloadPolling() {
     }
 }
 
-function loadSettingsToUI() {
+async function loadSettingsToUI() {
     const settings = getSettings();
 
     // System settings
@@ -1559,10 +1692,153 @@ function loadSettingsToUI() {
     document.getElementById('localPipelineDir').value = settings.localPipelineDir || '';
     document.getElementById('localVlmDir').value = settings.localVlmDir || '';
     
+    // LLM settings
+    const llmEnableInput = document.getElementById('llmEnable');
+    if (llmEnableInput) llmEnableInput.checked = settings.llmEnable || false;
+    const llmApiKeyInput = document.getElementById('llmApiKey');
+    if (llmApiKeyInput) llmApiKeyInput.value = settings.llmApiKey || '';
+    const llmBaseUrlInput = document.getElementById('llmBaseUrl');
+    if (llmBaseUrlInput) llmBaseUrlInput.value = settings.llmBaseUrl || '';
+    
+    // Render model dropdown
+    const select = document.getElementById('llmModel');
+    const customInput = document.getElementById('llmModelCustom');
+    const btnToggle = document.getElementById('btnToggleCustomModel');
+    const savedModel = settings.llmModel || '';
+    
+    if (select && customInput && btnToggle) {
+        const defaults = ['deepseek-chat', 'deepseek-reasoner', 'gpt-4o', 'qwen-plus', 'qwen-max'];
+        select.innerHTML = '';
+        defaults.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = m;
+            select.appendChild(opt);
+        });
+        
+        if (savedModel) {
+            if (defaults.includes(savedModel)) {
+                select.value = savedModel;
+                select.style.display = 'block';
+                customInput.style.display = 'none';
+                btnToggle.textContent = '自定义';
+            } else {
+                // If it is custom, add it as a select option and toggle custom input layout
+                const opt = document.createElement('option');
+                opt.value = savedModel;
+                opt.textContent = savedModel;
+                select.appendChild(opt);
+                select.value = savedModel;
+                
+                select.style.display = 'none';
+                customInput.style.display = 'block';
+                customInput.value = savedModel;
+                btnToggle.textContent = '下拉选择';
+            }
+        } else {
+            select.value = defaults[0];
+            select.style.display = 'block';
+            customInput.style.display = 'none';
+            btnToggle.textContent = '自定义';
+        }
+    }
+    
+    const llmEnableThinkingInput = document.getElementById('llmEnableThinking');
+    if (llmEnableThinkingInput) llmEnableThinkingInput.checked = settings.llmEnableThinking || false;
+    
     toggleLocalDirFields(settings.modelSource || 'huggingface');
+    toggleLlmFields(settings.llmEnable || false);
+
+    // Sync from backend mineru.json config
+    try {
+        const response = await fetch('/api/model_config');
+        if (response.ok) {
+            const backendConfig = await response.json();
+            
+            document.getElementById('modelSource').value = backendConfig.source || 'huggingface';
+            document.getElementById('modelCacheDir').value = backendConfig.cache_dir || '';
+            document.getElementById('localPipelineDir').value = backendConfig.local_pipeline_dir || '';
+            document.getElementById('localVlmDir').value = backendConfig.local_vlm_dir || '';
+            
+            if (llmEnableInput) llmEnableInput.checked = backendConfig.llm_enable || false;
+            if (llmApiKeyInput) llmApiKeyInput.value = backendConfig.llm_api_key || '';
+            if (llmBaseUrlInput) llmBaseUrlInput.value = backendConfig.llm_base_url || '';
+            
+            const bModel = backendConfig.llm_model || '';
+            if (select && customInput && btnToggle) {
+                if (backendConfig.llm_api_key && backendConfig.llm_base_url) {
+                    // Fetch remote model list silently
+                    await triggerModelFetch(true);
+                    
+                    // After sync, check if bModel exists in select options
+                    let found = false;
+                    for (let i = 0; i < select.options.length; i++) {
+                        if (select.options[i].value === bModel) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    
+                    if (found) {
+                        select.value = bModel;
+                        select.style.display = 'block';
+                        customInput.style.display = 'none';
+                        btnToggle.textContent = '自定义';
+                    } else if (bModel) {
+                        customInput.value = bModel;
+                        select.style.display = 'none';
+                        customInput.style.display = 'block';
+                        btnToggle.textContent = '下拉选择';
+                    }
+                } else if (bModel) {
+                    const defaults = ['deepseek-chat', 'deepseek-reasoner', 'gpt-4o', 'qwen-plus', 'qwen-max'];
+                    if (defaults.includes(bModel)) {
+                        select.value = bModel;
+                        select.style.display = 'block';
+                        customInput.style.display = 'none';
+                        btnToggle.textContent = '自定义';
+                    } else {
+                        customInput.value = bModel;
+                        select.style.display = 'none';
+                        customInput.style.display = 'block';
+                        btnToggle.textContent = '下拉选择';
+                    }
+                }
+            }
+            
+            if (llmEnableThinkingInput) llmEnableThinkingInput.checked = backendConfig.llm_enable_thinking || false;
+            
+            toggleLocalDirFields(backendConfig.source || 'huggingface');
+            toggleLlmFields(backendConfig.llm_enable || false);
+            
+            // Silently sync settings to localStorage
+            const updatedSettings = {
+                ...getSettings(),
+                modelSource: backendConfig.source,
+                modelCacheDir: backendConfig.cache_dir,
+                localPipelineDir: backendConfig.local_pipeline_dir,
+                localVlmDir: backendConfig.local_vlm_dir,
+                llmEnable: backendConfig.llm_enable,
+                llmApiKey: backendConfig.llm_api_key,
+                llmBaseUrl: backendConfig.llm_base_url,
+                llmModel: bModel,
+                llmEnableThinking: backendConfig.llm_enable_thinking
+            };
+            saveSettings(updatedSettings);
+        }
+    } catch (err) {
+        console.error('Failed to sync backend config:', err);
+    }
 }
 
 function saveSettingsFromUI() {
+    const select = document.getElementById('llmModel');
+    const customInput = document.getElementById('llmModelCustom');
+    let activeModel = '';
+    if (select && customInput) {
+        activeModel = select.style.display === 'none' ? customInput.value : select.value;
+    }
+
     const settings = {
         modelVersion: document.querySelector('input[name="modelVersion"]:checked').value,
         enableFormula: document.getElementById('enableFormula').checked,
@@ -1575,13 +1851,30 @@ function saveSettingsFromUI() {
         modelCacheDir: document.getElementById('modelCacheDir').value,
         localPipelineDir: document.getElementById('localPipelineDir').value,
         localVlmDir: document.getElementById('localVlmDir').value,
-        enableNotificationSound: document.getElementById('enableNotificationSound').checked
+        enableNotificationSound: document.getElementById('enableNotificationSound').checked,
+        
+        // LLM configs
+        llmEnable: document.getElementById('llmEnable')?.checked || false,
+        llmApiKey: document.getElementById('llmApiKey')?.value || '',
+        llmBaseUrl: document.getElementById('llmBaseUrl')?.value || '',
+        llmModel: activeModel || '',
+        llmEnableThinking: document.getElementById('llmEnableThinking')?.checked || false
     };
 
     saveSettings(settings);
 
     // Apply model source to environment
-    applyModelSource(settings.modelSource, settings.modelCacheDir, settings.localPipelineDir, settings.localVlmDir);
+    applyModelSource(
+        settings.modelSource, 
+        settings.modelCacheDir, 
+        settings.localPipelineDir, 
+        settings.localVlmDir,
+        settings.llmEnable,
+        settings.llmApiKey,
+        settings.llmBaseUrl,
+        settings.llmModel,
+        settings.llmEnableThinking
+    );
 
     // Update strategy banner
     updateStrategyBanner(settings);
@@ -1849,12 +2142,17 @@ function initUpdateLogic() {
     }
 }
 
-async function applyModelSource(source, cacheDir, localPipelineDir, localVlmDir) {
+async function applyModelSource(source, cacheDir, localPipelineDir, localVlmDir, llmEnable, llmApiKey, llmBaseUrl, llmModel, llmEnableThinking) {
     // Store in localStorage for backend to read
     localStorage.setItem('mineru.modelSource', source);
     localStorage.setItem('mineru.modelCacheDir', cacheDir || '');
     localStorage.setItem('mineru.localPipelineDir', localPipelineDir || '');
     localStorage.setItem('mineru.localVlmDir', localVlmDir || '');
+    localStorage.setItem('mineru.llmEnable', llmEnable || false);
+    localStorage.setItem('mineru.llmApiKey', llmApiKey || '');
+    localStorage.setItem('mineru.llmBaseUrl', llmBaseUrl || '');
+    localStorage.setItem('mineru.llmModel', llmModel || '');
+    localStorage.setItem('mineru.llmEnableThinking', llmEnableThinking || false);
 
     // Update backend configuration
     try {
@@ -1865,7 +2163,12 @@ async function applyModelSource(source, cacheDir, localPipelineDir, localVlmDir)
                 source, 
                 cache_dir: cacheDir || '',
                 local_pipeline_dir: localPipelineDir || '',
-                local_vlm_dir: localVlmDir || ''
+                local_vlm_dir: localVlmDir || '',
+                llm_enable: llmEnable || false,
+                llm_api_key: llmApiKey || '',
+                llm_base_url: llmBaseUrl || '',
+                llm_model: llmModel || '',
+                llm_enable_thinking: llmEnableThinking || false
             })
         });
 

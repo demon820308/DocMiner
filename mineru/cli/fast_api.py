@@ -90,11 +90,21 @@ class ModelConfigPayload(BaseModel):
     cache_dir: str = ""
     local_pipeline_dir: str = ""
     local_vlm_dir: str = ""
+    llm_enable: bool = False
+    llm_api_key: str = ""
+    llm_base_url: str = ""
+    llm_model: str = ""
+    llm_enable_thinking: bool = False
 
 # Pydantic model for model download
 class ModelDownloadPayload(BaseModel):
     model_type: str  # pipeline, vlm, all
     source: str = "auto"  # auto, huggingface, modelscope
+
+# Pydantic model for fetching remote models
+class LLMModelsFetchPayload(BaseModel):
+    api_key: str
+    base_url: str
 
 # Demo zip generation
 DEMO_ZIP_LOCK = asyncio.Lock()
@@ -1593,6 +1603,77 @@ async def open_folder(payload: FolderOpenPayload, request: Request):
         raise HTTPException(status_code=500, detail=f"Failed to open folder: {e}")
 
 
+@app.get(
+    path="/api/model_config",
+    status_code=200,
+    summary="Get model download and LLM configuration",
+    description="Read current configuration from mineru.json.",
+)
+async def get_model_config_api():
+    from mineru.utils.config_reader import read_config
+    config = read_config() or {}
+    
+    # Read download source & dirs
+    model_source = config.get("model-source", "auto")
+    models_dir = config.get("models-dir", {})
+    local_pipeline_dir = models_dir.get("pipeline", "")
+    local_vlm_dir = models_dir.get("vlm", "")
+    
+    # Check cache dir
+    cache_dir = os.environ.get("HF_HOME", "")
+    
+    # Read LLM configurations
+    llm_aided_config = config.get("llm-aided-config", {})
+    title_aided = llm_aided_config.get("title_aided", {})
+    
+    return {
+        "source": model_source,
+        "cache_dir": cache_dir,
+        "local_pipeline_dir": local_pipeline_dir,
+        "local_vlm_dir": local_vlm_dir,
+        "llm_enable": title_aided.get("enable", False),
+        "llm_api_key": title_aided.get("api_key", ""),
+        "llm_base_url": title_aided.get("base_url", ""),
+        "llm_model": title_aided.get("model", ""),
+        "llm_enable_thinking": title_aided.get("enable_thinking", False)
+    }
+
+
+@app.post(
+    path="/api/fetch_llm_models",
+    status_code=200,
+    summary="Fetch available LLM models from remote API provider",
+    description="Queries the OpenAI-compatible /models endpoint using the provided credentials.",
+)
+async def fetch_llm_models_api(payload: LLMModelsFetchPayload):
+    import httpx
+    url = payload.base_url.rstrip("/")
+    if not url.endswith("/models"):
+        if url.endswith("/v1"):
+            url = f"{url}/models"
+        else:
+            url = f"{url}/models"
+            
+    headers = {
+        "Authorization": f"Bearer {payload.api_key}",
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, headers=headers)
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=f"API returned status {response.status_code}: {response.text}")
+            
+            data = response.json()
+            models_data = data.get("data", [])
+            model_ids = [m.get("id") for m in models_data if isinstance(m, dict) and m.get("id")]
+            model_ids.sort()
+            return {"status": "success", "models": model_ids}
+    except Exception as e:
+        logging.exception(f"Error fetching models from {url}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post(
     path="/api/model_config",
     status_code=200,
@@ -1605,7 +1686,9 @@ async def update_model_config(payload: ModelConfigPayload, request: Request):
         f"[model_config] ip={client_ip} source={payload.source} "
         f"cache_dir={payload.cache_dir} "
         f"local_pipeline_dir={payload.local_pipeline_dir} "
-        f"local_vlm_dir={payload.local_vlm_dir}"
+        f"local_vlm_dir={payload.local_vlm_dir} "
+        f"llm_enable={payload.llm_enable} "
+        f"llm_model={payload.llm_model}"
     )
 
     # Update environment variables
@@ -1639,6 +1722,17 @@ async def update_model_config(payload: ModelConfigPayload, request: Request):
         }
     else:
         os.environ.pop("MINERU_MODEL_SOURCE", None)
+
+    # Add LLM config modifications
+    json_mods["llm-aided-config"] = {
+        "title_aided": {
+            "enable": payload.llm_enable,
+            "api_key": payload.llm_api_key,
+            "base_url": payload.llm_base_url,
+            "model": payload.llm_model,
+            "enable_thinking": payload.llm_enable_thinking
+        }
+    }
 
     try:
         download_and_modify_json(CONFIG_TEMPLATE_URL, config_file, json_mods)

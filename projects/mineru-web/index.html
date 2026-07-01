@@ -424,6 +424,47 @@
                                     </label>
                                 </div>
                             </div>
+                            
+                            <div class="settings-section">
+                                <h3 class="section-title">LLM 辅助解析</h3>
+                                <div class="setting-item">
+                                    <label class="setting-label">启用大模型标题优化</label>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="llmEnable">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div id="llmConfigContainer" style="display: none; margin-top: 10px; border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 6px; padding: 12px; flex-direction: column; gap: 10px;">
+                                    <div class="setting-item" style="border: none; padding: 0; margin-bottom: 8px;">
+                                        <label class="setting-label" style="min-width: 120px;">接口地址 (Base URL)</label>
+                                        <input type="text" id="llmBaseUrl" class="setting-input" placeholder="例如: https://api.deepseek.com/v1" style="flex: 1;">
+                                    </div>
+                                    <div class="setting-item" style="border: none; padding: 0; margin-bottom: 8px;">
+                                        <label class="setting-label" style="min-width: 120px;">API Key</label>
+                                        <input type="password" id="llmApiKey" class="setting-input" placeholder="请输入 API Key" style="flex: 1;">
+                                    </div>
+                                    <div class="setting-item" style="border: none; padding: 0; margin-bottom: 8px;">
+                                        <label class="setting-label" style="min-width: 120px;">模型名称 (Model)</label>
+                                        <div style="display: flex; gap: 8px; flex: 1; align-items: center;">
+                                            <select id="llmModel" class="setting-select" style="flex: 1;"></select>
+                                            <input type="text" id="llmModelCustom" class="setting-input" placeholder="手动输入模型名称" style="display: none; flex: 1;">
+                                            <button class="btn btn-sm" id="btnToggleCustomModel" style="white-space: nowrap;">自定义</button>
+                                        </div>
+                                    </div>
+                                    <div class="setting-item" style="border: none; padding: 0; margin-bottom: 0;">
+                                        <label class="setting-label" style="min-width: 120px;">启用思维模型 (Thinking)</label>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="llmEnableThinking">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="setting-hint">
+                                    <span class="hint-icon">💡</span>
+                                    <span class="hint-text">开启后，DocMiner 将利用您配置的大模型自动重构文档章节标题层级，使 Markdown 中的 H1-H4 标题层级更加合理（支持 OpenAI、DeepSeek、阿里通义等兼容 API）。</span>
+                                </div>
+                            </div>
+                            
                             <div class="settings-section">
                                 <h3 class="section-title">模型下载与路径</h3>
                                 <div class="setting-item">
