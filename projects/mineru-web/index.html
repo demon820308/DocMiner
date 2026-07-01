@@ -472,7 +472,6 @@
                                     <select id="modelSource" class="setting-select">
                                         <option value="huggingface">HuggingFace</option>
                                         <option value="modelscope">ModelScope</option>
-                                        <option value="local">本地模型 (Local)</option>
                                     </select>
                                 </div>
                                 <div class="setting-item" id="modelCacheDirContainer">
@@ -517,23 +516,9 @@
                                         *(下载由后台执行，点击开始后会持续在后台运行。如需中断下载，请重启软件)
                                     </div>
                                 </div>
-                                <div class="setting-item" id="localPipelineDirContainer" style="display: none;">
-                                    <label class="setting-label">Pipeline模型目录</label>
-                                    <div class="setting-value">
-                                        <input type="text" id="localPipelineDir" class="setting-input" placeholder="请选择本地 Pipeline 模型目录">
-                                        <button class="btn btn-sm" id="btnChangeLocalPipelineDir">选择</button>
-                                    </div>
-                                </div>
-                                <div class="setting-item" id="localVlmDirContainer" style="display: none;">
-                                    <label class="setting-label">VLM模型目录</label>
-                                    <div class="setting-value">
-                                        <input type="text" id="localVlmDir" class="setting-input" placeholder="请选择本地 VLM 模型目录">
-                                        <button class="btn btn-sm" id="btnChangeLocalVlmDir">选择</button>
-                                    </div>
-                                </div>
                                 <div class="setting-hint">
                                     <span class="hint-icon">💡</span>
-                                    <span class="hint-text">国内推荐使用 ModelScope，速度更快。选择“本地模型”可手动下载导入模型离线运行。</span>
+                                    <span class="hint-text">国内推荐使用 ModelScope，下载速度更快。模型会自动缓存在本地，之后可完全离线运行。</span>
                                 </div>
 
                             </div>

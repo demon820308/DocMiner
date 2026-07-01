@@ -1347,6 +1347,39 @@ class AsyncTaskManager:
             self._signal_task_event(task_id)
             logger.exception(f"Async task failed: {task_id}")
 
+    def post_process_output_markdown(self, output_dir: str) -> None:
+        """Scan and correct circled year numbers OCR typos locally in all generated markdown files."""
+        import os
+        import re
+        
+        circle_map = ["", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"]
+        
+        def repl(match):
+            digit = int(match.group(1))
+            year = match.group(2)
+            if 1 <= digit <= 10:
+                return f"{circle_map[digit]} {year}"
+            return match.group(0)
+        
+        pattern = re.compile(r"(?<!\d)([1-9])(19\d{2}|20\d{2})(?!\d)")
+        
+        for root, dirs, files in os.walk(output_dir):
+            for file in files:
+                if file.endswith(".md"):
+                    file_path = os.path.join(root, file)
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        
+                        new_content = pattern.sub(repl, content)
+                        
+                        if new_content != content:
+                            with open(file_path, "w", encoding="utf-8") as f:
+                                f.write(new_content)
+                            logger.info(f"[post_process] Corrected circled year numbers in {file_path}")
+                    except Exception as e:
+                        logger.exception(f"Error post-processing markdown file {file_path}: {e}")
+
     async def _run_task(self, task: AsyncParseTask) -> None:
         task.status = TASK_PROCESSING
         task.started_at = utc_now_iso()
@@ -1371,6 +1404,13 @@ class AsyncTaskManager:
             request_options=task,
             config=config,
         )
+
+        # Post-process output markdown to fix circled year numbers
+        try:
+            self.post_process_output_markdown(task.output_dir)
+        except Exception as exc:
+            logger.exception(f"Failed to post-process output markdown: {exc}")
+
         task.status = TASK_COMPLETED
         task.completed_at = utc_now_iso()
         self._signal_task_event(task.task_id)
@@ -1613,11 +1653,8 @@ async def get_model_config_api():
     from mineru.utils.config_reader import read_config
     config = read_config() or {}
     
-    # Read download source & dirs
+    # Read download source
     model_source = config.get("model-source", "auto")
-    models_dir = config.get("models-dir", {})
-    local_pipeline_dir = models_dir.get("pipeline", "")
-    local_vlm_dir = models_dir.get("vlm", "")
     
     # Check cache dir
     cache_dir = os.environ.get("HF_HOME", "")
@@ -1629,8 +1666,6 @@ async def get_model_config_api():
     return {
         "source": model_source,
         "cache_dir": cache_dir,
-        "local_pipeline_dir": local_pipeline_dir,
-        "local_vlm_dir": local_vlm_dir,
         "llm_enable": title_aided.get("enable", False),
         "llm_api_key": title_aided.get("api_key", ""),
         "llm_base_url": title_aided.get("base_url", ""),
@@ -1685,8 +1720,6 @@ async def update_model_config(payload: ModelConfigPayload, request: Request):
     logging.info(
         f"[model_config] ip={client_ip} source={payload.source} "
         f"cache_dir={payload.cache_dir} "
-        f"local_pipeline_dir={payload.local_pipeline_dir} "
-        f"local_vlm_dir={payload.local_vlm_dir} "
         f"llm_enable={payload.llm_enable} "
         f"llm_model={payload.llm_model}"
     )
@@ -1714,14 +1747,7 @@ async def update_model_config(payload: ModelConfigPayload, request: Request):
         "model-source": payload.source,
     }
     
-    if payload.source == "local":
-        os.environ["MINERU_MODEL_SOURCE"] = "local"
-        json_mods["models-dir"] = {
-            "pipeline": payload.local_pipeline_dir or "",
-            "vlm": payload.local_vlm_dir or "",
-        }
-    else:
-        os.environ.pop("MINERU_MODEL_SOURCE", None)
+    os.environ.pop("MINERU_MODEL_SOURCE", None)
 
     # Add LLM config modifications
     json_mods["llm-aided-config"] = {
@@ -1750,6 +1776,58 @@ DOWNLOAD_STATUS = {
     "error": "",
 }
 
+def detect_default_cached_model_path(repo_mode: str) -> str | None:
+    """Check standard cache locations of ModelScope and HuggingFace to see if the models are already present."""
+    import os
+    
+    # Determine cache directories (respect HF_HOME / MODELSCOPE_CACHE env vars)
+    hf_cache_home = os.environ.get("HF_HOME") or os.environ.get("TRANSFORMERS_CACHE") or os.path.expanduser("~/.cache/huggingface")
+    hf_hub_cache = os.path.join(hf_cache_home, "hub")
+    
+    ms_cache_home = os.environ.get("MODELSCOPE_CACHE") or os.path.expanduser("~/.cache/modelscope")
+    ms_hub_cache = os.path.join(ms_cache_home, "hub")
+    
+    # Repositories mapping
+    repos = {
+        "pipeline": {
+            "hf_repo_folder": "models--opendatalab--PDF-Extract-Kit-1.0",
+            "ms_repo_folder": "OpenDataLab/PDF-Extract-Kit-1.0",
+            "verify_subpath": "models/Layout/PP-DocLayoutV2"
+        },
+        "vlm": {
+            "hf_repo_folder": "models--opendatalab--MinerU2.5-Pro-2605-1.2B",
+            "ms_repo_folder": "OpenDataLab/MinerU2.5-Pro-2605-1.2B",
+            "verify_subpath": "config.json"
+        }
+    }
+    
+    repo_info = repos.get(repo_mode)
+    if not repo_info:
+        return None
+        
+    # 1. Check ModelScope Cache first
+    ms_path = os.path.join(ms_hub_cache, repo_info["ms_repo_folder"])
+    ms_verify = os.path.join(ms_path, repo_info["verify_subpath"])
+    if os.path.exists(ms_verify):
+        return os.path.abspath(ms_path)
+        
+    # 2. Check HuggingFace Cache
+    hf_repo_path = os.path.join(hf_hub_cache, repo_info["hf_repo_folder"])
+    hf_snapshots_path = os.path.join(hf_repo_path, "snapshots")
+    if os.path.exists(hf_snapshots_path):
+        try:
+            snapshots = os.listdir(hf_snapshots_path)
+            for s in snapshots:
+                s_path = os.path.join(hf_snapshots_path, s)
+                if os.path.isdir(s_path):
+                    hf_verify = os.path.join(s_path, repo_info["verify_subpath"])
+                    if os.path.exists(hf_verify):
+                        return os.path.abspath(s_path)
+        except Exception:
+            pass
+            
+    return None
+
 @app.get(
     path="/api/offline_models_status",
     status_code=200,
@@ -1765,6 +1843,12 @@ async def get_offline_models_status():
     pipeline_root = get_existing_configured_model_root("pipeline", ModelPath.pp_doclayout_v2)
     vlm_root = get_existing_configured_model_root("vlm", "/")
     
+    # Fall back to default cache path auto-detection if config is empty
+    if not pipeline_root:
+        pipeline_root = detect_default_cached_model_path("pipeline")
+    if not vlm_root:
+        vlm_root = detect_default_cached_model_path("vlm")
+        
     return {
         "pipeline": {
             "downloaded": pipeline_root is not None,

@@ -18,8 +18,6 @@ const DEFAULT_SETTINGS = {
     userId: '-',
     modelSource: 'huggingface',
     modelCacheDir: '',
-    localPipelineDir: '',
-    localVlmDir: '',
     enableNotificationSound: true,
     llmEnable: false,
     llmApiKey: '',
@@ -75,8 +73,6 @@ document.addEventListener('DOMContentLoaded', () => {
     applyModelSource(
         settings.modelSource || 'huggingface', 
         settings.modelCacheDir || '',
-        settings.localPipelineDir || '',
-        settings.localVlmDir || '',
         settings.llmEnable || false,
         settings.llmApiKey || '',
         settings.llmBaseUrl || '',
@@ -1271,31 +1267,7 @@ function initSettings() {
         }
     });
 
-    // Change local pipeline model directory
-    document.getElementById('btnChangeLocalPipelineDir')?.addEventListener('click', async () => {
-        if (window.electronAPI && window.electronAPI.selectDirectory) {
-            const dir = await window.electronAPI.selectDirectory('选择本地 Pipeline 模型目录');
-            if (dir) {
-                document.getElementById('localPipelineDir').value = dir;
-                saveSettingsFromUI();
-            }
-        } else {
-            showToast('仅在桌面客户端中支持该功能', 'info');
-        }
-    });
 
-    // Change local VLM model directory
-    document.getElementById('btnChangeLocalVlmDir')?.addEventListener('click', async () => {
-        if (window.electronAPI && window.electronAPI.selectDirectory) {
-            const dir = await window.electronAPI.selectDirectory('选择本地 VLM 模型目录');
-            if (dir) {
-                document.getElementById('localVlmDir').value = dir;
-                saveSettingsFromUI();
-            }
-        } else {
-            showToast('仅在桌面客户端中支持该功能', 'info');
-        }
-    });
 
     // Model source change - show hint & toggle local path fields
     document.getElementById('modelSource')?.addEventListener('change', (e) => {
@@ -1364,23 +1336,11 @@ function initSettings() {
 function toggleLocalDirFields(source) {
     const cacheContainer = document.getElementById('modelCacheDirContainer');
     const downloadManagerContainer = document.getElementById('modelDownloadManagerContainer');
-    const pipelineContainer = document.getElementById('localPipelineDirContainer');
-    const vlmContainer = document.getElementById('localVlmDirContainer');
     
-    if (source === 'local') {
-        if (cacheContainer) cacheContainer.style.display = 'none';
-        if (downloadManagerContainer) downloadManagerContainer.style.display = 'none';
-        if (pipelineContainer) pipelineContainer.style.display = 'flex';
-        if (vlmContainer) vlmContainer.style.display = 'flex';
-    } else {
-        if (cacheContainer) cacheContainer.style.display = 'flex';
-        if (downloadManagerContainer) downloadManagerContainer.style.display = 'flex';
-        if (pipelineContainer) pipelineContainer.style.display = 'none';
-        if (vlmContainer) vlmContainer.style.display = 'none';
-        
-        // Check local model download status in cache
-        checkOfflineModelsStatus();
-    }
+    if (cacheContainer) cacheContainer.style.display = 'flex';
+    if (downloadManagerContainer) downloadManagerContainer.style.display = 'flex';
+    
+    checkOfflineModelsStatus();
 }
 
 function toggleLlmFields(enable) {
@@ -1502,14 +1462,7 @@ async function checkOfflineModelsStatus() {
                     btnPipeline.disabled = false;
                 }
                 
-                // Auto-fill local input if empty
-                const localPipelineInput = document.getElementById('localPipelineDir');
-                if (localPipelineInput && !localPipelineInput.value && data.pipeline.path) {
-                    localPipelineInput.value = data.pipeline.path;
-                    const settings = getSettings();
-                    settings.localPipelineDir = data.pipeline.path;
-                    saveSettings(settings);
-                }
+
             } else {
                 if (pipelineStatus) {
                     pipelineStatus.textContent = '未下载';
@@ -1535,14 +1488,7 @@ async function checkOfflineModelsStatus() {
                     btnVlm.disabled = false;
                 }
                 
-                // Auto-fill local input if empty
-                const localVlmInput = document.getElementById('localVlmDir');
-                if (localVlmInput && !localVlmInput.value && data.vlm.path) {
-                    localVlmInput.value = data.vlm.path;
-                    const settings = getSettings();
-                    settings.localVlmDir = data.vlm.path;
-                    saveSettings(settings);
-                }
+
             } else {
                 if (vlmStatus) {
                     vlmStatus.textContent = '未下载';
@@ -1689,8 +1635,6 @@ async function loadSettingsToUI() {
     // Model download settings
     document.getElementById('modelSource').value = settings.modelSource || 'huggingface';
     document.getElementById('modelCacheDir').value = settings.modelCacheDir || '';
-    document.getElementById('localPipelineDir').value = settings.localPipelineDir || '';
-    document.getElementById('localVlmDir').value = settings.localVlmDir || '';
     
     // LLM settings
     const llmEnableInput = document.getElementById('llmEnable');
@@ -1757,8 +1701,6 @@ async function loadSettingsToUI() {
             
             document.getElementById('modelSource').value = backendConfig.source || 'huggingface';
             document.getElementById('modelCacheDir').value = backendConfig.cache_dir || '';
-            document.getElementById('localPipelineDir').value = backendConfig.local_pipeline_dir || '';
-            document.getElementById('localVlmDir').value = backendConfig.local_vlm_dir || '';
             
             if (llmEnableInput) llmEnableInput.checked = backendConfig.llm_enable || false;
             if (llmApiKeyInput) llmApiKeyInput.value = backendConfig.llm_api_key || '';
@@ -1816,8 +1758,6 @@ async function loadSettingsToUI() {
                 ...getSettings(),
                 modelSource: backendConfig.source,
                 modelCacheDir: backendConfig.cache_dir,
-                localPipelineDir: backendConfig.local_pipeline_dir,
-                localVlmDir: backendConfig.local_vlm_dir,
                 llmEnable: backendConfig.llm_enable,
                 llmApiKey: backendConfig.llm_api_key,
                 llmBaseUrl: backendConfig.llm_base_url,
@@ -1849,8 +1789,6 @@ function saveSettingsFromUI() {
         userId: document.getElementById('userId').textContent,
         modelSource: document.getElementById('modelSource').value,
         modelCacheDir: document.getElementById('modelCacheDir').value,
-        localPipelineDir: document.getElementById('localPipelineDir').value,
-        localVlmDir: document.getElementById('localVlmDir').value,
         enableNotificationSound: document.getElementById('enableNotificationSound').checked,
         
         // LLM configs
@@ -1867,8 +1805,6 @@ function saveSettingsFromUI() {
     applyModelSource(
         settings.modelSource, 
         settings.modelCacheDir, 
-        settings.localPipelineDir, 
-        settings.localVlmDir,
         settings.llmEnable,
         settings.llmApiKey,
         settings.llmBaseUrl,
@@ -2142,12 +2078,10 @@ function initUpdateLogic() {
     }
 }
 
-async function applyModelSource(source, cacheDir, localPipelineDir, localVlmDir, llmEnable, llmApiKey, llmBaseUrl, llmModel, llmEnableThinking) {
+async function applyModelSource(source, cacheDir, llmEnable, llmApiKey, llmBaseUrl, llmModel, llmEnableThinking) {
     // Store in localStorage for backend to read
     localStorage.setItem('mineru.modelSource', source);
     localStorage.setItem('mineru.modelCacheDir', cacheDir || '');
-    localStorage.setItem('mineru.localPipelineDir', localPipelineDir || '');
-    localStorage.setItem('mineru.localVlmDir', localVlmDir || '');
     localStorage.setItem('mineru.llmEnable', llmEnable || false);
     localStorage.setItem('mineru.llmApiKey', llmApiKey || '');
     localStorage.setItem('mineru.llmBaseUrl', llmBaseUrl || '');
@@ -2162,8 +2096,6 @@ async function applyModelSource(source, cacheDir, localPipelineDir, localVlmDir,
             body: JSON.stringify({ 
                 source, 
                 cache_dir: cacheDir || '',
-                local_pipeline_dir: localPipelineDir || '',
-                local_vlm_dir: localVlmDir || '',
                 llm_enable: llmEnable || false,
                 llm_api_key: llmApiKey || '',
                 llm_base_url: llmBaseUrl || '',
