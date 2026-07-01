@@ -17,7 +17,8 @@ const DEFAULT_SETTINGS = {
     outputDir: './output',
     userId: '-',
     modelSource: 'huggingface',
-    modelCacheDir: ''
+    modelCacheDir: '',
+    enableNotificationSound: true
 };
 
 const STATUS = {
@@ -469,6 +470,12 @@ function startPolling(taskId) {
                 }
                 updateProgressUI(100);
                 showToast('解析完成', 'success');
+                
+                const settings = getSettings();
+                if (settings.enableNotificationSound !== false) {
+                    playDingSound();
+                }
+
                 if (currentPage === 'viewer' && currentTaskId === taskId) {
                     loadTaskContent(taskId);
                 }
@@ -1242,6 +1249,7 @@ function loadSettingsToUI() {
     document.getElementById('enableTable').checked = settings.enableTable;
     document.getElementById('forceOcr').checked = settings.forceOcr;
     document.getElementById('language').value = settings.language;
+    document.getElementById('enableNotificationSound').checked = settings.enableNotificationSound !== false;
 
     // Model download settings
     document.getElementById('modelSource').value = settings.modelSource || 'huggingface';
@@ -1258,7 +1266,8 @@ function saveSettingsFromUI() {
         outputDir: document.getElementById('outputDir').textContent,
         userId: document.getElementById('userId').textContent,
         modelSource: document.getElementById('modelSource').value,
-        modelCacheDir: document.getElementById('modelCacheDir').value
+        modelCacheDir: document.getElementById('modelCacheDir').value,
+        enableNotificationSound: document.getElementById('enableNotificationSound').checked
     };
 
     saveSettings(settings);
@@ -1809,6 +1818,39 @@ function getSettings() {
 
 function saveSettings(settings) {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+}
+
+function playDingSound() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc1 = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        
+        osc1.connect(gainNode);
+        osc2.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        const now = audioCtx.currentTime;
+        
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(987.77, now); // B5 note
+        
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(1975.53, now); // B6 note (overtone)
+        
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(0.3, now + 0.05); // Attack
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.2); // Decay
+        
+        osc1.start(now);
+        osc2.start(now);
+        
+        osc1.stop(now + 1.2);
+        osc2.stop(now + 1.2);
+    } catch (err) {
+        console.error('Failed to play ding sound:', err);
+    }
 }
 
 // ==================== Toast ====================
