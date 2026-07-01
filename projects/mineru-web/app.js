@@ -49,9 +49,11 @@ let showBBox = false;
 let middleJson = null;
 let currentImageBlob = null;
 let currentRenderTask = null;
+let currentMdContent = '';
 
 // ==================== DOM Ready ====================
 document.addEventListener('DOMContentLoaded', () => {
+    initAppVersion();
     initRouter();
     initSidebar();
     initUpload();
@@ -1037,7 +1039,16 @@ function updateZoom() {
 
 // ==================== Markdown + KaTeX ====================
 function renderMarkdown(content, zip) {
+    currentMdContent = content || '';
     const container = document.getElementById('markdownContent');
+    if (!content) {
+        container.innerHTML = '';
+        return;
+    }
+
+    // Collapse multiple consecutive newlines (3 or more) to standard double newlines
+    let processedContent = content.replace(/\r\n/g, '\n');
+    processedContent = processedContent.replace(/\n\s*\n(\s*\n)+/g, '\n\n');
 
     // Configure marked with KaTeX
     const renderer = new marked.Renderer();
@@ -1062,7 +1073,7 @@ function renderMarkdown(content, zip) {
     });
 
     // Process inline math before rendering
-    let processedContent = content.replace(/\$\$(.*?)\$\$/gs, (match, formula) => {
+    processedContent = processedContent.replace(/\$\$(.*?)\$\$/gs, (match, formula) => {
         try {
             return katex.renderToString(formula, { displayMode: true, throwOnError: false });
         } catch (e) {
@@ -1213,6 +1224,9 @@ function initSettings() {
 
     // Update strategy banner on load
     updateStrategyBanner(getSettings());
+
+    // Initialize software update logic
+    initUpdateLogic();
 }
 
 function loadSettingsToUI() {
@@ -1277,6 +1291,245 @@ function updateStrategyBanner(settings) {
             desc = '当前模式：Pipeline（OCR + 版面分析 + 公式识别）';
     }
     bannerDesc.textContent = desc;
+}
+
+// ==================== Software Update Logic ====================
+async function initAppVersion() {
+    if (window.electronAPI && window.electronAPI.getAppVersion) {
+        try {
+            const version = await window.electronAPI.getAppVersion();
+            // Update sidebar version span
+            const sidebarVer = document.querySelector('.sidebar-footer .version');
+            if (sidebarVer) sidebarVer.textContent = `v${version}`;
+            
+            // Update settings update-tab current version span
+            const currentVerText = document.getElementById('currentVersionText');
+            if (currentVerText) currentVerText.textContent = `v${version}`;
+        } catch (err) {
+            console.error('Failed to get app version:', err);
+        }
+    }
+}
+
+function initUpdateLogic() {
+    const btnCheckUpdate = document.getElementById('btnCheckUpdate');
+    const lastCheckTime = document.getElementById('lastCheckTime');
+    const latestVersionBadge = document.getElementById('latestVersionBadge');
+    const latestVersionText = document.getElementById('latestVersionText');
+    const updateDetailsSection = document.getElementById('updateDetailsSection');
+    const changelogContainer = document.getElementById('changelogContainer');
+    const downloadProgressContainer = document.getElementById('downloadProgressContainer');
+    const downloadStatusText = document.getElementById('downloadStatusText');
+    const downloadPercentText = document.getElementById('downloadPercentText');
+    const downloadProgressFill = document.getElementById('downloadProgressFill');
+    const downloadSpeedText = document.getElementById('downloadSpeedText');
+    const btnStartDownload = document.getElementById('btnStartDownload');
+    const btnOpenReleasePage = document.getElementById('btnOpenReleasePage');
+    const btnCancelDownload = document.getElementById('btnCancelDownload');
+    const btnInstallUpdate = document.getElementById('btnInstallUpdate');
+
+    let updateData = null; // Stores release data from GitHub
+    let targetAssetUrl = null; // Download URL for current platform package
+    let downloadedFilePath = null; // Downloaded file location
+    let unsubscribeDownloadListener = null;
+
+    // Helper: format bytes to MB
+    function formatMB(bytes) {
+        if (!bytes || isNaN(bytes)) return '0.0 MB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    // Helper: Semver comparison (current, latest) -> true if latest is newer
+    function isNewerVersion(current, latest) {
+        const cleanCurrent = current.replace(/^v/, '');
+        const cleanLatest = latest.replace(/^v/, '');
+        const partsCurrent = cleanCurrent.split('.').map(Number);
+        const partsLatest = cleanLatest.split('.').map(Number);
+        for (let i = 0; i < 3; i++) {
+            const vCurr = partsCurrent[i] || 0;
+            const vLate = partsLatest[i] || 0;
+            if (vLate > vCurr) return true;
+            if (vLate < vCurr) return false;
+        }
+        return false;
+    }
+
+    btnCheckUpdate.addEventListener('click', async () => {
+        btnCheckUpdate.disabled = true;
+        btnCheckUpdate.textContent = '检查中...';
+        
+        try {
+            // Retrieve current version
+            let currentVersion = '1.0.0';
+            if (window.electronAPI && window.electronAPI.getAppVersion) {
+                currentVersion = await window.electronAPI.getAppVersion();
+            }
+
+            // Request GitHub releases
+            const response = await fetch('https://api.github.com/repos/demon820308/DocMiner/releases/latest');
+            if (!response.ok) {
+                throw new Error(`GitHub API returned status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            updateData = data;
+            const latestVersion = data.tag_name;
+
+            // Show last checked time
+            const now = new Date();
+            lastCheckTime.textContent = `上次检查: ${now.toLocaleTimeString()}`;
+            lastCheckTime.style.display = 'inline';
+
+            // Compare versions
+            const hasUpdate = isNewerVersion(currentVersion, latestVersion);
+
+            if (hasUpdate) {
+                // Show latest badge
+                latestVersionText.textContent = latestVersion;
+                latestVersionBadge.style.display = 'inline-block';
+                updateDetailsSection.style.display = 'block';
+                
+                // Render release notes
+                if (window.marked && window.marked.parse) {
+                    changelogContainer.innerHTML = window.marked.parse(data.body || '*没有更新日志*');
+                } else {
+                    changelogContainer.textContent = data.body || '没有更新日志';
+                }
+
+                // Match installer for current platform
+                let isWin = navigator.userAgent.includes('Windows');
+                let isMac = navigator.userAgent.includes('Mac');
+                targetAssetUrl = null;
+
+                if (data.assets && data.assets.length > 0) {
+                    for (const asset of data.assets) {
+                        const name = asset.name.toLowerCase();
+                        if (isWin && name.endsWith('.exe')) {
+                            targetAssetUrl = asset.browser_download_url;
+                            break;
+                        } else if (isMac && name.endsWith('.dmg')) {
+                            targetAssetUrl = asset.browser_download_url;
+                            break;
+                        }
+                    }
+                }
+
+                // Show buttons
+                btnStartDownload.style.display = targetAssetUrl ? 'inline-flex' : 'none';
+                btnOpenReleasePage.style.display = 'inline-flex';
+                btnCancelDownload.style.display = 'none';
+                btnInstallUpdate.style.display = 'none';
+                downloadProgressContainer.style.display = 'none';
+
+                showToast('发现新版本: ' + latestVersion, 'success');
+            } else {
+                latestVersionBadge.style.display = 'none';
+                updateDetailsSection.style.display = 'none';
+                showToast('已是最新版本', 'success');
+            }
+        } catch (error) {
+            console.error('Check for updates failed:', error);
+            showToast('检查更新失败，请稍后重试', 'error');
+        } finally {
+            btnCheckUpdate.disabled = false;
+            btnCheckUpdate.textContent = '检查更新';
+        }
+    });
+
+    btnOpenReleasePage.addEventListener('click', () => {
+        if (updateData && updateData.html_url && window.electronAPI && window.electronAPI.openExternal) {
+            window.electronAPI.openExternal(updateData.html_url);
+        }
+    });
+
+    btnStartDownload.addEventListener('click', () => {
+        if (!targetAssetUrl) {
+            showToast('未找到适配当前系统的安装包，请在浏览器中下载', 'warning');
+            return;
+        }
+
+        btnCheckUpdate.disabled = true;
+        btnStartDownload.style.display = 'none';
+        btnOpenReleasePage.style.display = 'none';
+        btnCancelDownload.style.display = 'inline-flex';
+        btnInstallUpdate.style.display = 'none';
+        
+        downloadProgressContainer.style.display = 'block';
+        downloadPercentText.textContent = '0%';
+        downloadProgressFill.style.width = '0%';
+        downloadStatusText.textContent = '准备下载...';
+        downloadSpeedText.textContent = '0.0 MB / 0.0 MB';
+
+        // Call main process to download
+        if (window.electronAPI && window.electronAPI.startDownload) {
+            window.electronAPI.startDownload(targetAssetUrl);
+
+            // Clean previous subscription if any
+            if (unsubscribeDownloadListener) unsubscribeDownloadListener();
+
+            // Subscribe to status updates
+            unsubscribeDownloadListener = window.electronAPI.onDownloadStatus((info) => {
+                if (info.status === 'downloading') {
+                    downloadStatusText.textContent = '正在下载...';
+                    downloadPercentText.textContent = `${info.percent}%`;
+                    downloadProgressFill.style.width = `${info.percent}%`;
+                    downloadSpeedText.textContent = `${formatMB(info.received)} / ${formatMB(info.total)}`;
+                } else if (info.status === 'completed') {
+                    downloadStatusText.textContent = '下载完成！';
+                    downloadPercentText.textContent = '100%';
+                    downloadProgressFill.style.width = '100%';
+                    downloadedFilePath = info.savePath;
+
+                    btnCancelDownload.style.display = 'none';
+                    btnInstallUpdate.style.display = 'inline-flex';
+                    showToast('下载完成，请重启并安装', 'success');
+                    
+                    if (unsubscribeDownloadListener) {
+                        unsubscribeDownloadListener();
+                        unsubscribeDownloadListener = null;
+                    }
+                } else if (info.status === 'cancelled') {
+                    resetDownloadUI('已取消下载');
+                } else if (info.status === 'failed' || info.status === 'interrupted') {
+                    resetDownloadUI('下载失败: ' + (info.error || '连接中断'));
+                    showToast('下载失败', 'error');
+                }
+            });
+        }
+    });
+
+    btnCancelDownload.addEventListener('click', () => {
+        if (window.electronAPI && window.electronAPI.cancelDownload) {
+            window.electronAPI.cancelDownload();
+        }
+    });
+
+    btnInstallUpdate.addEventListener('click', () => {
+        if (downloadedFilePath && window.electronAPI && window.electronAPI.installUpdate) {
+            showToast('正在启动安装程序...', 'info');
+            setTimeout(() => {
+                window.electronAPI.installUpdate(downloadedFilePath);
+            }, 800);
+        }
+    });
+
+    function resetDownloadUI(statusMsg) {
+        btnCheckUpdate.disabled = false;
+        btnStartDownload.style.display = 'inline-flex';
+        btnOpenReleasePage.style.display = 'inline-flex';
+        btnCancelDownload.style.display = 'none';
+        btnInstallUpdate.style.display = 'none';
+        downloadProgressContainer.style.display = 'none';
+        
+        if (statusMsg) {
+            showToast(statusMsg, 'info');
+        }
+
+        if (unsubscribeDownloadListener) {
+            unsubscribeDownloadListener();
+            unsubscribeDownloadListener = null;
+        }
+    }
 }
 
 async function applyModelSource(source, cacheDir) {
@@ -1716,6 +1969,30 @@ function initViewerTabs() {
         printMarkdownToPdf();
     });
 
+    // Add event listener for MD saving
+    document.getElementById('btnSaveMd')?.addEventListener('click', () => {
+        const title = document.getElementById('viewerTitle')?.textContent?.trim() || 'document';
+        const filename = `${title}.md`;
+        if (currentMdContent) {
+            if (window.electronAPI && window.electronAPI.saveAsMD) {
+                window.electronAPI.saveAsMD(currentMdContent, filename);
+            } else {
+                // Fallback to browser Blob download
+                const blob = new Blob([currentMdContent], { type: 'text/markdown;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', filename);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }
+        } else {
+            alert('没有可保存的 Markdown 内容');
+        }
+    });
+
     document.querySelectorAll('.pane-tab').forEach(tab => {
         tab.addEventListener('click', () => {
             const target = tab.getAttribute('data-tab');
@@ -1753,6 +2030,48 @@ function printMarkdownToPdf() {
     
     showToast('正在打开打印预览页面...', 'info');
 
+    // Clean up empty lines, redundant spaces, and double breaks in a temporary container
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = mdContent.innerHTML;
+    
+    // Remove empty paragraphs, keeping at most one consecutive empty paragraph to preserve natural line breaks
+    let lastWasEmpty = false;
+    tempDiv.querySelectorAll('p').forEach(p => {
+        const text = p.textContent.trim().replace(/\u00a0/g, ''); // Remove non-breaking spaces
+        const hasVisibleContent = text.length > 0;
+        const hasMediaOrStructure = p.querySelector('img, table, iframe, svg, canvas, .katex, .katex-display');
+        
+        if (!hasVisibleContent && !hasMediaOrStructure) {
+            if (lastWasEmpty) {
+                p.remove();
+            } else {
+                lastWasEmpty = true;
+            }
+        } else {
+            lastWasEmpty = false;
+        }
+    });
+
+    // Remove empty headings or lists
+    tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6, ul, ol').forEach(el => {
+        if (!el.textContent.trim() && !el.querySelector('*')) {
+            el.remove();
+        }
+    });
+
+    // Remove consecutive redundant br elements
+    tempDiv.querySelectorAll('br').forEach(br => {
+        let next = br.nextSibling;
+        while (next && next.nodeType === 3 && !next.textContent.trim()) {
+            next = next.nextSibling;
+        }
+        if (next && (next.nodeName === 'BR' || (next.nodeType === 1 && next.tagName === 'BR'))) {
+            br.remove();
+        }
+    });
+
+    const cleanedHTML = tempDiv.innerHTML;
+
     // Open a new tab
     const previewWindow = window.open('', '_blank');
     if (!previewWindow) {
@@ -1772,8 +2091,12 @@ function printMarkdownToPdf() {
             <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
             <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
             <link rel="stylesheet" href="/lib/katex.min.css">
-            <link rel="stylesheet" href="/style.css">
+            <link rel="stylesheet" href="/style.css?v=2">
             <style>
+                @page {
+                    size: A4;
+                    margin: 0 !important;
+                }
                 /* Override parent site's overflow: hidden to enable scrolling */
                 html, body {
                     overflow: auto !important;
@@ -1865,34 +2188,444 @@ function printMarkdownToPdf() {
                     justify-content: center;
                     min-height: 100vh;
                     box-sizing: border-box;
+                    font-family: 'Inter', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
+                }
+                .print-layout-wrapper {
+                    position: relative;
+                    margin-top: 50px;
+                    display: flex;
+                    justify-content: center;
                 }
                 .print-preview-container {
                     background: #fff;
                     width: 210mm; /* A4 width */
                     min-height: 297mm; /* A4 height */
-                    padding: 2.5cm 2cm;
+                    padding: 10mm !important; /* Compact padding matching compact margins */
                     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
                     border-radius: 4px;
                     box-sizing: border-box;
                 }
+
+                /* Ruler Layout */
+                .ruler-vertical {
+                    position: absolute;
+                    left: -50px;
+                    top: 0;
+                    width: 40px;
+                    height: 29.7cm;
+                    border-right: 2px solid #a8a090;
+                    font-family: 'Inter', sans-serif;
+                    font-size: 9px;
+                    color: #8c8273;
+                    user-select: none;
+                }
+                .ruler-horizontal {
+                    position: absolute;
+                    left: 0;
+                    top: -50px;
+                    height: 40px;
+                    width: 21cm;
+                    border-bottom: 2px solid #a8a090;
+                    font-family: 'Inter', sans-serif;
+                    font-size: 9px;
+                    color: #8c8273;
+                    user-select: none;
+                }
+                .safety-line {
+                    position: absolute;
+                    left: -50px;
+                    top: 28.5cm;
+                    width: calc(210mm + 50px);
+                    height: 1px;
+                    border-top: 1px dashed rgba(220, 38, 38, 0.35);
+                    z-index: 10;
+                    pointer-events: none;
+                }
+                .safety-line-label {
+                    position: absolute;
+                    left: 60px;
+                    top: 4px;
+                    font-family: 'Inter', sans-serif;
+                    font-size: 9px;
+                    color: #dc2626;
+                    font-weight: bold;
+                    background: rgba(220, 38, 38, 0.08);
+                    border: 1px solid rgba(220, 38, 38, 0.2);
+                    padding: 1px 5px;
+                    border-radius: 3px;
+                }
+                .ruler-tick {
+                    position: absolute;
+                    box-sizing: border-box;
+                }
+                
+                /* Vertical ticks */
+                .ruler-vertical .ruler-tick {
+                    right: 0;
+                    width: 6px;
+                    height: 1px;
+                    background: #a8a090;
+                }
+                .ruler-vertical .ruler-tick.major {
+                    width: 15px;
+                    background: #5c554a;
+                    height: 1.5px;
+                }
+                .ruler-vertical .ruler-tick.major::before {
+                    content: attr(data-label);
+                    position: absolute;
+                    right: 20px;
+                    top: -6px;
+                    white-space: nowrap;
+                    font-weight: 500;
+                }
+                .ruler-vertical .ruler-tick.medium {
+                    width: 10px;
+                    background: #8c8273;
+                }
+                .ruler-vertical .ruler-tick.medium::before {
+                    content: attr(data-label);
+                    position: absolute;
+                    right: 14px;
+                    top: -6px;
+                    white-space: nowrap;
+                }
+                .ruler-vertical .ruler-tick.minor {
+                    width: 5px;
+                }
+                .ruler-vertical .end-tick {
+                    background: #cc785c !important;
+                    height: 2px !important;
+                    width: 25px !important;
+                }
+                .ruler-vertical .end-tick::before {
+                    color: #cc785c;
+                    font-weight: 600;
+                }
+
+                /* Horizontal ticks */
+                .ruler-horizontal .ruler-tick {
+                    bottom: 0;
+                    width: 1px;
+                    height: 6px;
+                    background: #a8a090;
+                }
+                .ruler-horizontal .ruler-tick.major {
+                    height: 15px;
+                    background: #5c554a;
+                    width: 1.5px;
+                }
+                .ruler-horizontal .ruler-tick.major::before {
+                    content: attr(data-label);
+                    position: absolute;
+                    left: -10px;
+                    bottom: 18px;
+                    white-space: nowrap;
+                    font-weight: 500;
+                }
+                .ruler-horizontal .ruler-tick.medium {
+                    height: 10px;
+                    background: #8c8273;
+                }
+                .ruler-horizontal .ruler-tick.medium::before {
+                    content: attr(data-label);
+                    position: absolute;
+                    left: -4px;
+                    bottom: 13px;
+                    white-space: nowrap;
+                }
+                .ruler-horizontal .ruler-tick.minor {
+                    height: 5px;
+                }
+
+                :root {
+                    --base-font-size: 10.5pt;
+                    --heading-font-size: 14pt;
+                    --table-font-size: 10.5pt;
+                    --base-line-height: 1.45;
+                    --block-margin: 12px;
+                    --page-padding: 10mm;
+                    --table-cell-padding-y: 6px;
+                    --table-cell-padding-x: 10px;
+                    --text-align: left;
+                    --font-family: 'Inter', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
+                }
+
+                .print-btn.active {
+                    background: #cc785c !important;
+                    border-color: #cc785c !important;
+                    color: #fff !important;
+                    box-shadow: 0 0 8px rgba(204, 120, 92, 0.4);
+                }
+
+                /* Preset: Normal (标准原版) */
+                .preset-normal.markdown-content {
+                    font-size: 10.5pt !important;
+                    line-height: 1.45 !important;
+                }
+                .preset-normal.markdown-content p,
+                .preset-normal.markdown-content ul,
+                .preset-normal.markdown-content ol,
+                .preset-normal.markdown-content li,
+                .preset-normal.markdown-content pre,
+                .preset-normal.markdown-content blockquote {
+                    margin-top: 12px !important;
+                    margin-bottom: 12px !important;
+                }
+                .preset-normal.markdown-content h1,
+                .preset-normal.markdown-content h2 {
+                    font-size: 14pt !important;
+                    margin-top: 24px !important;
+                    margin-bottom: 12px !important;
+                }
+                .preset-normal.markdown-content h3,
+                .preset-normal.markdown-content h4,
+                .preset-normal.markdown-content h5,
+                .preset-normal.markdown-content h6 {
+                    font-size: 12pt !important;
+                    margin-top: 16px !important;
+                    margin-bottom: 8px !important;
+                }
+                .preset-normal.markdown-content table {
+                    margin-top: 12px !important;
+                    margin-bottom: 12px !important;
+                }
+                .preset-normal.markdown-content td,
+                .preset-normal.markdown-content th {
+                    padding: 6px 10px !important;
+                }
+
+                /* Preset: Compact (Auto-fit base) */
+                .preset-compact.markdown-content {
+                    font-size: 10pt !important;
+                    line-height: 1.35 !important;
+                }
+                .preset-compact.markdown-content p,
+                .preset-compact.markdown-content ul,
+                .preset-compact.markdown-content ol,
+                .preset-compact.markdown-content li,
+                .preset-compact.markdown-content pre,
+                .preset-compact.markdown-content blockquote {
+                    margin-top: 8px !important;
+                    margin-bottom: 8px !important;
+                }
+                .preset-compact.markdown-content h1,
+                .preset-compact.markdown-content h2 {
+                    font-size: 13pt !important;
+                    margin-top: 18px !important;
+                    margin-bottom: 10px !important;
+                }
+                .preset-compact.markdown-content h3,
+                .preset-compact.markdown-content h4,
+                .preset-compact.markdown-content h5,
+                .preset-compact.markdown-content h6 {
+                    font-size: 11.5pt !important;
+                    margin-top: 12px !important;
+                    margin-bottom: 6px !important;
+                }
+                .preset-compact.markdown-content table {
+                    margin-top: 8px !important;
+                    margin-bottom: 8px !important;
+                }
+                .preset-compact.markdown-content td,
+                .preset-compact.markdown-content th {
+                    padding: 4px 8px !important;
+                }
+
+                /* Preset: Ultra-Compact (极简单页) */
+                .preset-ultra.markdown-content {
+                    font-size: 9.5pt !important;
+                    line-height: 1.25 !important;
+                }
+                .preset-ultra.markdown-content p,
+                .preset-ultra.markdown-content ul,
+                .preset-ultra.markdown-content ol,
+                .preset-ultra.markdown-content li,
+                .preset-ultra.markdown-content pre,
+                .preset-ultra.markdown-content blockquote {
+                    margin-top: 5px !important;
+                    margin-bottom: 5px !important;
+                }
+                .preset-ultra.markdown-content h1,
+                .preset-ultra.markdown-content h2 {
+                    font-size: 12pt !important;
+                    margin-top: 12px !important;
+                    margin-bottom: 6px !important;
+                }
+                .preset-ultra.markdown-content h3,
+                .preset-ultra.markdown-content h4,
+                .preset-ultra.markdown-content h5,
+                .preset-ultra.markdown-content h6 {
+                    font-size: 10.5pt !important;
+                    margin-top: 8px !important;
+                    margin-bottom: 4px !important;
+                }
+                .preset-ultra.markdown-content table {
+                    margin-top: 5px !important;
+                    margin-bottom: 5px !important;
+                }
+                .preset-ultra.markdown-content td,
+                .preset-ultra.markdown-content th {
+                    padding: 3px 6px !important;
+                }
+
+                /* Preset: Table-Shrink (表格微缩) */
+                .preset-table-shrink.markdown-content {
+                    font-size: 10.5pt !important;
+                    line-height: 1.45 !important;
+                }
+                .preset-table-shrink.markdown-content p,
+                .preset-table-shrink.markdown-content ul,
+                .preset-table-shrink.markdown-content ol,
+                .preset-table-shrink.markdown-content li,
+                .preset-table-shrink.markdown-content pre,
+                .preset-table-shrink.markdown-content blockquote {
+                    margin-top: 12px !important;
+                    margin-bottom: 12px !important;
+                }
+                .preset-table-shrink.markdown-content h1,
+                .preset-table-shrink.markdown-content h2 {
+                    font-size: 14pt !important;
+                    margin-top: 24px !important;
+                    margin-bottom: 12px !important;
+                }
+                .preset-table-shrink.markdown-content h3,
+                .preset-table-shrink.markdown-content h4,
+                .preset-table-shrink.markdown-content h5,
+                .preset-table-shrink.markdown-content h6 {
+                    font-size: 12pt !important;
+                    margin-top: 16px !important;
+                    margin-bottom: 8px !important;
+                }
+                .preset-table-shrink.markdown-content table {
+                    margin-top: 4px !important;
+                    margin-bottom: 4px !important;
+                }
+                .preset-table-shrink.markdown-content td,
+                .preset-table-shrink.markdown-content th {
+                    padding: 2px 4px !important;
+                    line-height: 1.20 !important;
+                }
+
+
+
+                /* Preset: Custom (自定义) */
+                .preset-custom.markdown-content {
+                    font-size: var(--base-font-size) !important;
+                    line-height: var(--base-line-height) !important;
+                    font-family: var(--font-family) !important;
+                    text-align: var(--text-align) !important;
+                }
+                .preset-custom.markdown-content p,
+                .preset-custom.markdown-content ul,
+                .preset-custom.markdown-content ol,
+                .preset-custom.markdown-content li,
+                .preset-custom.markdown-content pre,
+                .preset-custom.markdown-content blockquote {
+                    margin-top: var(--block-margin) !important;
+                    margin-bottom: var(--block-margin) !important;
+                }
+                .preset-custom.markdown-content h1,
+                .preset-custom.markdown-content h2 {
+                    font-size: var(--heading-font-size) !important;
+                    margin-top: calc(var(--block-margin) * 2) !important;
+                    margin-bottom: var(--block-margin) !important;
+                }
+                .preset-custom.markdown-content h3,
+                .preset-custom.markdown-content h4 {
+                    font-size: calc(var(--heading-font-size) * 0.85) !important;
+                    margin-top: calc(var(--block-margin) * 1.3) !important;
+                    margin-bottom: calc(var(--block-margin) * 0.7) !important;
+                }
+                .preset-custom.markdown-content h5,
+                .preset-custom.markdown-content h6 {
+                    font-size: calc(var(--heading-font-size) * 0.75) !important;
+                    margin-top: calc(var(--block-margin) * 1.1) !important;
+                    margin-bottom: calc(var(--block-margin) * 0.5) !important;
+                }
+                .preset-custom.markdown-content table {
+                    margin-top: var(--block-margin) !important;
+                    margin-bottom: var(--block-margin) !important;
+                }
+                .preset-custom.markdown-content td,
+                .preset-custom.markdown-content th {
+                    padding: var(--table-cell-padding-y) var(--table-cell-padding-x) !important;
+                    font-size: var(--table-font-size) !important;
+                }
+                .print-preview-container.custom-padding {
+                    padding: var(--page-padding) !important;
+                }
+
+                /* Custom Parameter Panel */
+                .custom-panel {
+                    position: fixed;
+                    top: 70px;
+                    right: 25px;
+                    background: rgba(30, 28, 25, 0.95);
+                    border: 1px solid rgba(255, 255, 255, 0.15);
+                    border-radius: 8px;
+                    padding: 16px;
+                    box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+                    z-index: 1000;
+                    display: none;
+                    flex-direction: column;
+                    gap: 12px;
+                    width: 290px;
+                    color: #fff;
+                    font-family: 'Inter', sans-serif;
+                    backdrop-filter: blur(10px);
+                }
+                .custom-panel-row {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    font-size: 0.85rem;
+                }
+                .custom-panel-row label {
+                    width: 100px;
+                    color: rgba(255, 255, 255, 0.7);
+                    text-align: left;
+                }
+                .custom-panel-row input[type="range"] {
+                    flex: 1;
+                    margin: 0 10px;
+                    accent-color: #cc785c;
+                    cursor: pointer;
+                }
+                .custom-panel-row span {
+                    min-width: 45px;
+                    text-align: right;
+                    font-weight: 500;
+                    font-size: 0.8rem;
+                    color: #cc785c;
+                }
+
+                .markdown-content img {
+                    margin: 4px 0 !important;
+                }
+                .katex-display {
+                    margin: 0.5em 0 !important;
+                }
                 
                 /* Print layouts */
                 @media print {
-                    .print-toolbar {
+                    .print-toolbar, .ruler-vertical, .ruler-horizontal, .custom-panel, .safety-line {
                         display: none !important;
                     }
+                    .print-layout-wrapper {
+                        margin-top: 0 !important;
+                    }
                     body {
+                        display: block !important;
                         background: #fff !important;
                         padding-top: 0 !important;
                         padding-bottom: 0 !important;
                     }
                     .print-preview-container {
-                        width: 100% !important;
+                        width: 210mm !important;
                         box-shadow: none !important;
-                        padding: 0 !important;
                         margin: 0 !important;
                         border-radius: 0 !important;
-                        zoom: 1 !important; /* Reset zoom to 100% on printing */
                     }
                 }
             </style>
@@ -1900,6 +2633,13 @@ function printMarkdownToPdf() {
         <body>
             <div class="print-toolbar">
                 <div class="print-toolbar-title">📄 打印预览：${document.getElementById('viewerTitle')?.textContent || '未命名文档'}</div>
+                <div style="display: flex; gap: 6px; margin: 0 15px;">
+                    <button class="print-btn print-btn-secondary active" id="btnPresetNormal" onclick="applyPreset('normal')" style="padding: 6px 12px; font-size: 0.85rem;">标准原版</button>
+                    <button class="print-btn print-btn-secondary" id="btnPresetAuto" onclick="applyPreset('auto')" style="padding: 6px 12px; font-size: 0.85rem;">自适应一页</button>
+                    <button class="print-btn print-btn-secondary" id="btnPresetUltra" onclick="applyPreset('ultra')" style="padding: 6px 12px; font-size: 0.85rem;">极简单页</button>
+                    <button class="print-btn print-btn-secondary" id="btnPresetTable" onclick="applyPreset('table')" style="padding: 6px 12px; font-size: 0.85rem;">表格微缩</button>
+                    <button class="print-btn print-btn-secondary" id="btnPresetCustom" onclick="applyPreset('custom')" style="padding: 6px 12px; font-size: 0.85rem;">自定义...</button>
+                </div>
                 <div class="print-toolbar-center">
                     <button class="print-btn print-btn-secondary" onclick="changeZoom(-0.1)" title="缩小">−</button>
                     <span class="zoom-val" id="zoomVal">100%</span>
@@ -1908,16 +2648,83 @@ function printMarkdownToPdf() {
                 <div class="print-toolbar-actions">
                     <button class="print-btn print-btn-primary" onclick="window.print()">
                         <span>🖨️</span>
-                        <span>打印 / 另存为 PDF</span>
+                        <span>打印</span>
+                    </button>
+                    <button class="print-btn print-btn-primary" onclick="window.opener && window.opener.triggerSavePDF ? window.opener.triggerSavePDF() : (window.electronAPI ? window.electronAPI.saveAsPDF() : window.print())">
+                        <span>💾</span>
+                        <span>另存为 PDF</span>
                     </button>
                     <button class="print-btn print-btn-secondary" onclick="window.close()">
                         <span>关闭预览</span>
                     </button>
                 </div>
             </div>
-            <div class="print-preview-container" id="previewContainer">
-                <div class="markdown-content">
-                    ${mdContent.innerHTML}
+            
+            <div class="custom-panel" id="customPanel">
+                <div class="custom-panel-row">
+                    <label>字号大小:</label>
+                    <input type="range" id="paramFontSize" min="8" max="14" step="0.5" value="10.5" oninput="updateCustomParam()">
+                    <span id="valFontSize">10.5pt</span>
+                </div>
+                <div class="custom-panel-row">
+                    <label>标题字号:</label>
+                    <input type="range" id="paramHeadingSize" min="10" max="22" step="0.5" value="14" oninput="updateCustomParam()">
+                    <span id="valHeadingSize">14pt</span>
+                </div>
+                <div class="custom-panel-row">
+                    <label>表格字号:</label>
+                    <input type="range" id="paramTableFontSize" min="7" max="13" step="0.5" value="10.5" oninput="updateCustomParam()">
+                    <span id="valTableFontSize">10.5pt</span>
+                </div>
+                <div class="custom-panel-row">
+                    <label>段落行高:</label>
+                    <input type="range" id="paramLineHeight" min="1.1" max="1.8" step="0.05" value="1.45" oninput="updateCustomParam()">
+                    <span id="valLineHeight">1.45</span>
+                </div>
+                <div class="custom-panel-row">
+                    <label>段落边距:</label>
+                    <input type="range" id="paramBlockMargin" min="0" max="24" step="1" value="12" oninput="updateCustomParam()">
+                    <span id="valBlockMargin">12px</span>
+                </div>
+                <div class="custom-panel-row">
+                    <label>单元内衬:</label>
+                    <input type="range" id="paramTableCellPadding" min="1" max="15" step="1" value="6" oninput="updateCustomParam()">
+                    <span id="valTableCellPadding">6px</span>
+                </div>
+                <div class="custom-panel-row">
+                    <label>字体风格:</label>
+                    <select id="paramFontFamily" onchange="updateCustomParam()" style="flex: 1; margin: 0 10px; background: #3c352a; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px; font-size: 0.8rem; cursor: pointer; outline: none;">
+                        <option value="default" selected>系统默认</option>
+                        <option value="serif">典雅宋体</option>
+                        <option value="mono">极客等宽</option>
+                    </select>
+                </div>
+                <div class="custom-panel-row" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; justify-content: flex-start; gap: 12px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <input type="checkbox" id="paramAutoFit" onchange="toggleAutoFit(true)" style="cursor: pointer;">
+                        <label for="paramAutoFit" style="cursor: pointer; user-select: none; width: auto; color: rgba(255,255,255,0.9); margin-bottom: 0;">自适应单页</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <input type="checkbox" id="paramKeepScale" checked onchange="toggleAutoFit(false)" style="cursor: pointer;">
+                        <label for="paramKeepScale" style="cursor: pointer; user-select: none; width: auto; color: rgba(255,255,255,0.9); margin-bottom: 0;">比例不变</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <input type="checkbox" id="paramJustify" onchange="updateCustomParam()" style="cursor: pointer;">
+                        <label for="paramJustify" style="cursor: pointer; user-select: none; width: auto; color: rgba(255,255,255,0.9); margin-bottom: 0;">两端对齐</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="print-layout-wrapper" id="layoutWrapper">
+                <div class="ruler-vertical" id="verticalRuler"></div>
+                <div class="ruler-horizontal" id="horizontalRuler"></div>
+                <div class="safety-line" id="safetyLine">
+                    <span class="safety-line-label">安全线 (28.5cm)</span>
+                </div>
+                <div class="print-preview-container" id="previewContainer">
+                    <div class="markdown-content" id="markdownContentArea">
+                        ${cleanedHTML}
+                    </div>
                 </div>
             </div>
             
@@ -1925,9 +2732,224 @@ function printMarkdownToPdf() {
                 let zoom = 1.0;
                 window.changeZoom = function(delta) {
                     zoom = Math.max(0.5, Math.min(2.0, zoom + delta));
-                    document.getElementById('previewContainer').style.zoom = zoom;
+                    document.getElementById('layoutWrapper').style.zoom = zoom;
                     document.getElementById('zoomVal').textContent = Math.round(zoom * 100) + '%';
                 };
+
+                // Reusable high-precision autoscale calculation
+                window.recalculateAutoscale = function() {
+                    if (currentPreset === 'normal' || (currentPreset === 'custom' && !document.getElementById('paramAutoFit').checked)) {
+                        return;
+                    }
+                    const container = document.getElementById('markdownContentArea');
+                    if (!container) return;
+                    
+                    // Create temp div to measure 297mm (A4 height) in px
+                    const temp = document.createElement('div');
+                    temp.style.height = '297mm';
+                    temp.style.position = 'absolute';
+                    temp.style.visibility = 'hidden';
+                    document.body.appendChild(temp);
+                    const a4HeightPx = temp.clientHeight;
+                    document.body.removeChild(temp);
+                    
+                    const printableHeightPx = a4HeightPx * (275 / 297); // 28.5cm limit (28.5cm - 1cm top margin)
+                    const contentHeightPx = container.scrollHeight;
+                    
+                    if (contentHeightPx > printableHeightPx) {
+                        // Apply a 0.965 safety margin factor (3.5% buffer) to guarantee content never exceeds 28.5cm due to browser rounding
+                        let autoScale = (printableHeightPx / contentHeightPx) * 0.965;
+                        autoScale = Math.max(0.4, autoScale); // Allow scaling down to 40% to handle extreme dense content
+                        container.style.zoom = autoScale.toFixed(4);
+                        document.getElementById('zoomVal').textContent = Math.round(autoScale * 100) + '% (自适应)';
+                    } else {
+                        container.style.zoom = 1.0;
+                        document.getElementById('zoomVal').textContent = '100%';
+                    }
+                };
+
+                // Preset Switcher Logic
+                let currentPreset = 'normal';
+                window.applyPreset = function(type) {
+                    const container = document.getElementById('markdownContentArea');
+                    const wrapper = document.getElementById('layoutWrapper');
+                    const page = document.getElementById('previewContainer');
+                    
+                    // Reset active states
+                    document.getElementById('btnPresetNormal').classList.remove('active');
+                    document.getElementById('btnPresetAuto').classList.remove('active');
+                    document.getElementById('btnPresetUltra').classList.remove('active');
+                    document.getElementById('btnPresetTable').classList.remove('active');
+                    document.getElementById('btnPresetCustom').classList.remove('active');
+                    
+                    // Apply active button
+                    if (type === 'normal') document.getElementById('btnPresetNormal').classList.add('active');
+                    if (type === 'auto') document.getElementById('btnPresetAuto').classList.add('active');
+                    if (type === 'ultra') document.getElementById('btnPresetUltra').classList.add('active');
+                    if (type === 'table') document.getElementById('btnPresetTable').classList.add('active');
+                    if (type === 'custom') document.getElementById('btnPresetCustom').classList.add('active');
+                    
+                    currentPreset = type;
+                    
+                    // Remove current classes
+                    container.classList.remove('preset-normal', 'preset-compact', 'preset-ultra', 'preset-table-shrink', 'preset-custom');
+                    page.classList.remove('custom-padding');
+                    
+                    // Reset content area zoom first
+                    container.style.zoom = 1.0;
+                    document.getElementById('zoomVal').textContent = '100%';
+                    
+                    if (type === 'normal') {
+                        container.classList.add('preset-normal');
+                        document.getElementById('customPanel').style.display = 'none';
+                    } else if (type === 'auto') {
+                        container.classList.add('preset-normal');
+                        document.getElementById('customPanel').style.display = 'none';
+                    } else if (type === 'ultra') {
+                        container.classList.add('preset-ultra');
+                        document.getElementById('customPanel').style.display = 'none';
+                    } else if (type === 'table') {
+                        container.classList.add('preset-table-shrink');
+                        document.getElementById('customPanel').style.display = 'none';
+                    } else if (type === 'custom') {
+                        container.classList.add('preset-custom');
+                        page.classList.add('custom-padding');
+                        document.getElementById('customPanel').style.display = 'flex';
+                        updateCustomParam();
+                        return; // Done
+                    }
+                    
+                    // Run autoscale calculation with multiple checks to handle rendering delays (KaTeX, image loading, table rendering)
+                    setTimeout(recalculateAutoscale, 50);
+                    setTimeout(recalculateAutoscale, 200);
+                    setTimeout(recalculateAutoscale, 500);
+                };
+
+                // Real-time custom parameter update
+                window.updateCustomParam = function() {
+                    const container = document.getElementById('markdownContentArea');
+                    const wrapper = document.getElementById('layoutWrapper');
+                    const page = document.getElementById('previewContainer');
+                    
+                    const fontSize = document.getElementById('paramFontSize').value;
+                    const headingSize = document.getElementById('paramHeadingSize').value;
+                    const tableFontSize = document.getElementById('paramTableFontSize').value;
+                    const lineHeight = document.getElementById('paramLineHeight').value;
+                    const blockMargin = document.getElementById('paramBlockMargin').value + 'px';
+                    const cellPadding = document.getElementById('paramTableCellPadding').value + 'px';
+                    const fontFamilyKey = document.getElementById('paramFontFamily').value;
+                    const justify = document.getElementById('paramJustify').checked;
+                    const autoFit = document.getElementById('paramAutoFit').checked;
+                    
+                    // Update label values
+                    document.getElementById('valFontSize').textContent = fontSize + 'pt';
+                    document.getElementById('valHeadingSize').textContent = headingSize + 'pt';
+                    document.getElementById('valTableFontSize').textContent = tableFontSize + 'pt';
+                    document.getElementById('valLineHeight').textContent = lineHeight;
+                    document.getElementById('valBlockMargin').textContent = blockMargin;
+                    document.getElementById('valTableCellPadding').textContent = cellPadding;
+                    
+                    // Font families map
+                    let fontValue = "'Inter', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif";
+                    if (fontFamilyKey === 'serif') {
+                        fontValue = "'Cormorant Garamond', 'SimSun', 'Songti SC', serif";
+                    } else if (fontFamilyKey === 'mono') {
+                        fontValue = "'JetBrains Mono', 'Courier New', monospace";
+                    }
+                    
+                    // Set CSS variables on root
+                    document.documentElement.style.setProperty('--base-font-size', fontSize + 'pt');
+                    document.documentElement.style.setProperty('--heading-font-size', headingSize + 'pt');
+                    document.documentElement.style.setProperty('--table-font-size', tableFontSize + 'pt');
+                    document.documentElement.style.setProperty('--base-line-height', lineHeight);
+                    document.documentElement.style.setProperty('--block-margin', blockMargin);
+                    document.documentElement.style.setProperty('--page-padding', '10mm');
+                    document.documentElement.style.setProperty('--table-cell-padding-y', cellPadding);
+                    document.documentElement.style.setProperty('--table-cell-padding-x', (parseInt(cellPadding) * 1.5) + 'px');
+                    document.documentElement.style.setProperty('--font-family', fontValue);
+                    document.documentElement.style.setProperty('--text-align', justify ? 'justify' : 'left');
+                    
+                    // Setup dynamic page print margin (ALWAYS 0 to avoid print engine downscaling)
+                    let pageStyle = document.getElementById('dynamicPageStyle');
+                    if (!pageStyle) {
+                        pageStyle = document.createElement('style');
+                        pageStyle.id = 'dynamicPageStyle';
+                        document.head.appendChild(pageStyle);
+                    }
+                    pageStyle.textContent = '@page { size: A4; margin: 0 !important; }';
+                    
+                    // Reset zoom first
+                    container.style.zoom = 1.0;
+                    document.getElementById('zoomVal').textContent = '100%';
+                    
+                    if (autoFit) {
+                        // Run autoscale calculation with multiple checks to handle rendering delays
+                        setTimeout(recalculateAutoscale, 50);
+                        setTimeout(recalculateAutoscale, 200);
+                        setTimeout(recalculateAutoscale, 500);
+                    }
+                };
+
+                // Link mutually exclusive checkboxes
+                window.toggleAutoFit = function(isAutoFit) {
+                    const autoFitCheckbox = document.getElementById('paramAutoFit');
+                    const keepScaleCheckbox = document.getElementById('paramKeepScale');
+                    if (isAutoFit) {
+                        keepScaleCheckbox.checked = !autoFitCheckbox.checked;
+                    } else {
+                        autoFitCheckbox.checked = !keepScaleCheckbox.checked;
+                    }
+                    updateCustomParam();
+                };
+
+                // Initialize default preset on load (default to standard normal layout)
+                window.addEventListener('load', () => {
+                    applyPreset('normal');
+                });
+
+                // Generate vertical ruler ticks (A4 height is 29.7cm)
+                const ruler = document.getElementById('verticalRuler');
+                for (let i = 0; i <= 29.7; i += 0.5) {
+                    if (Math.abs(i - 29.7) < 0.1) continue;
+                    const tick = document.createElement('div');
+                    tick.className = 'ruler-tick';
+                    tick.style.top = i + 'cm';
+                    
+                    if (i % 5 === 0) {
+                        tick.className += ' major';
+                        tick.setAttribute('data-label', i + 'cm');
+                    } else if (Math.round(i) === i) {
+                        tick.className += ' medium';
+                        tick.setAttribute('data-label', i + '');
+                    } else {
+                        tick.className += ' minor';
+                    }
+                    ruler.appendChild(tick);
+                }
+                const endTick = document.createElement('div');
+                endTick.className = 'ruler-tick major end-tick';
+                endTick.style.top = '29.7cm';
+                endTick.setAttribute('data-label', '29.7cm (A4)');
+                ruler.appendChild(endTick);
+
+                // Generate horizontal ruler ticks (A4 width is 21cm)
+                const hruler = document.getElementById('horizontalRuler');
+                for (let i = 0; i <= 21; i += 0.5) {
+                    const tick = document.createElement('div');
+                    tick.className = 'ruler-tick';
+                    tick.style.left = i + 'cm';
+                    
+                    if (i % 5 === 0) {
+                        tick.className += ' major';
+                        tick.setAttribute('data-label', i + 'cm');
+                    } else if (Math.round(i) === i) {
+                        tick.className += ' medium';
+                        tick.setAttribute('data-label', i + '');
+                    } else {
+                        tick.className += ' minor';
+                    }
+                    hruler.appendChild(tick);
+                }
             <\/script>
         </body>
         </html>
@@ -1940,6 +2962,13 @@ window.navigateToTask = navigateToTask;
 window.openTaskFolder = openTaskFolder;
 window.deleteTask = deleteTask;
 window.goToPage = goToPage;
+window.triggerSavePDF = function() {
+    if (window.electronAPI && window.electronAPI.saveAsPDF) {
+        window.electronAPI.saveAsPDF();
+    } else {
+        console.error("electronAPI.saveAsPDF is not available in parent window.");
+    }
+};
 
 // ==================== Favorites ====================
 function toggleFavorite(taskId) {

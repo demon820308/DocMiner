@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="/lib/katex.min.css">
     
     <!-- App CSS -->
-    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/style.css?v=2">
 </head>
 <body>
     <!-- Sidebar -->
@@ -173,6 +173,10 @@
                             <button class="pane-tab" data-tab="json">JSON</button>
                         </div>
                         <div class="pane-header-actions" id="paneRightActions" style="display: none;">
+                            <button class="btn btn-sm" id="btnSaveMd" title="保存 Markdown 源文件" style="margin-right: 6px;">
+                                <span class="btn-icon">💾</span>
+                                <span class="btn-text">保存 MD</span>
+                            </button>
                             <button class="btn btn-sm btn-primary" id="btnDownloadPdf" title="导出 PDF 文件，方便打印">
                                 <span class="btn-icon">🖨️</span>
                                 <span class="btn-text">导出 PDF</span>
@@ -305,6 +309,7 @@
                 <div class="settings-layout">
                     <div class="settings-sidebar">
                         <button class="settings-nav-item active" data-tab="params">参数设置</button>
+                        <button class="settings-nav-item" data-tab="help">使用帮助</button>
                         <button class="settings-nav-item" data-tab="update">软件更新</button>
                     </div>
                     <div class="settings-content">
@@ -437,11 +442,145 @@
                         
                         <!-- Update Settings -->
                         <div class="settings-tab" id="tabUpdate" style="display: none;">
-                            <div class="update-placeholder">
-                                <div class="update-icon">🔄</div>
-                                <h3 class="update-title">软件更新</h3>
-                                <p class="update-desc">当前版本 v1.0.0</p>
-                                <p class="update-hint">自动更新检测功能即将上线</p>
+                            <div class="settings-section">
+                                <h3 class="section-title">版本信息</h3>
+                                <div class="update-status-card">
+                                    <div class="update-info-header">
+                                        <div class="update-logo-container">
+                                            <img src="/assets/logo.png" class="update-logo" alt="DocMiner">
+                                        </div>
+                                        <div class="update-info-meta">
+                                            <h4 class="app-name">DocMiner</h4>
+                                            <div class="version-badges">
+                                                <span class="version-badge current-version-badge">当前版本: <span id="currentVersionText">v1.0.2</span></span>
+                                                <span class="version-badge latest-version-badge" id="latestVersionBadge" style="display: none;">最新版本: <span id="latestVersionText"></span></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="update-action-container">
+                                        <button class="btn btn-primary" id="btnCheckUpdate">检查更新</button>
+                                        <span class="update-check-time" id="lastCheckTime" style="display: none;"></span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Update details (changelog & progress) - shown only when checking/update found -->
+                            <div class="settings-section" id="updateDetailsSection" style="display: none;">
+                                <h3 class="section-title" id="updateDetailsTitle">更新详情</h3>
+                                
+                                <div class="changelog-container" id="changelogContainer">
+                                    <!-- Release notes will be rendered here dynamically -->
+                                </div>
+                                
+                                <div class="download-progress-container" id="downloadProgressContainer" style="display: none;">
+                                    <div class="progress-info">
+                                        <span id="downloadStatusText">正在下载...</span>
+                                        <span id="downloadPercentText">0%</span>
+                                    </div>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" id="downloadProgressFill" style="width: 0%;"></div>
+                                    </div>
+                                    <div class="progress-meta">
+                                        <span id="downloadSpeedText">-- MB / -- MB</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="update-actions" id="updateActions">
+                                    <button class="btn btn-primary" id="btnStartDownload" style="display: none;">立即更新</button>
+                                    <button class="btn" id="btnOpenReleasePage" style="display: none;">在浏览器中查看</button>
+                                    <button class="btn btn-danger" id="btnCancelDownload" style="display: none;">取消下载</button>
+                                    <button class="btn btn-success" id="btnInstallUpdate" style="display: none;">重启并安装</button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Help Tab -->
+                        <div class="settings-tab" id="tabHelp" style="display: none;">
+                            <div class="help-container">
+                                <div class="settings-section">
+                                    <h3 class="section-title">💡 快速入门</h3>
+                                    <p class="help-text">DocMiner 是一款基于高性能 <b>MinerU</b> 的智能文档解析桌面客户端。它能够将 PDF 文档及 JPG/PNG 图片深度解析为高质量的 Markdown 及结构化 JSON 格式，适用于 RAG 知识库建设、大模型语料清洗及学术文档数字化。</p>
+                                    <div class="help-steps">
+                                        <div class="help-step"><span class="step-num">1</span> 拖拽文件至解析主页，或点击选择 PDF、PNG、JPG 文件。</div>
+                                        <div class="help-step"><span class="step-num">2</span> 系统在后台调用高性能解析引擎进行布局分析、公式与表格提取。</div>
+                                        <div class="help-step"><span class="step-num">3</span> 自动完成解析，双栏对照预览解析结果，一键保存 Markdown、导出 PDF 或查看 JSON 数据。</div>
+                                    </div>
+                                </div>
+
+                                <div class="settings-section">
+                                    <h3 class="section-title">⚙️ 解析引擎介绍</h3>
+                                    <div class="help-desc-item">
+                                        <strong>Hybrid (混合引擎)</strong>：<i>推荐首选</i>。结合文本提取与 OCR（光学字符识别），自动检测文档中的文本质量并进行混合处理，解析速度与精度达到极佳平衡。
+                                    </div>
+                                    <div class="help-desc-item">
+                                        <strong>VLM (多模态大模型引擎)</strong>：利用多模态视觉大模型对版面进行深度理解，适用于排版极其复杂、多栏混排或具有大量图表插图的非标准文档。
+                                    </div>
+                                    <div class="help-desc-item">
+                                        <strong>Pipeline (传统分析管线)</strong>：标准的传统版面分析管道。依次进行 OCR、版面分析和公式/表格检测，适用于标准扫描件或低解析度图像。
+                                    </div>
+                                </div>
+
+                                <div class="settings-section">
+                                    <h3 class="section-title">🛠️ 核心功能与参数说明</h3>
+                                    <div class="help-detail-grid">
+                                        <div class="help-detail-row">
+                                            <span class="detail-label">公式识别</span>
+                                            <span class="detail-value">自动识别文档中的行内公式与块公式，并精准转换为标准的 LaTeX 代码（通过 KaTeX 渲染展示）。</span>
+                                        </div>
+                                        <div class="help-detail-row">
+                                            <span class="detail-label">表格识别</span>
+                                            <span class="detail-value">将文档中的有线、无线、复杂网格表格识别并转换为结构化的 Markdown 表格或 HTML 数据。</span>
+                                        </div>
+                                        <div class="help-detail-row">
+                                            <span class="detail-label">强制 OCR</span>
+                                            <span class="detail-value">无视 PDF 自带的文本层，全部进行光学字符扫描，适合解决 PDF 文本层字符乱码、字体编码受损或文字错位的问题。</span>
+                                        </div>
+                                        <div class="help-detail-row">
+                                            <span class="detail-label">文档语言</span>
+                                            <span class="detail-value">设置 OCR 引擎 of 语言偏好，支持自动检测、中文、英文。准确的语言设置能显著提升文字提取精度。</span>
+                                        </div>
+                                        <div class="help-detail-row">
+                                            <span class="detail-label">下载源与缓存</span>
+                                            <span class="detail-value">模型下载源支持 HuggingFace 和 ModelScope。国内网络推荐使用 ModelScope。支持自定义模型缓存目录，以便释放 C 盘空间。</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="settings-section">
+                                    <h3 class="section-title">🖨️ 导出与 PDF 打印预览说明</h3>
+                                    <p class="help-text">在解析结果对比页面的右侧，系统提供了两个主要的导出选项：<b>保存 MD</b>（保存 Markdown 源文件）和 <b>导出 PDF</b>。点击“导出 PDF”后将自动进入专业的 PDF 打印预览页面，主要操作与配置如下：</p>
+                                    <ul class="help-list">
+                                        <li><strong>标准排版预设</strong>：
+                                            <ul>
+                                                <li><b>标准原版</b>：采用标准 A4 字号（10.5pt）与常规段落行高，适合通用文档阅读与直接保存。</li>
+                                                <li><b>自适应一页 / 极简单页</b>：通过等比例压缩字号、段落行高、块边距，使多页文档内容更加紧凑，尽可能将内容合理适配排版在最少页数中。</li>
+                                                <li><b>表格微缩</b>：保持正文字号不变，但将所有表格字号与单元格间距最小化，适合排版表格内容庞大、密集的报表类文档。</li>
+                                                <li><b>自定义</b>：开启右侧悬浮的“自定义参数调节面板”，由您完全控制页面细节。</li>
+                                            </ul>
+                                        </li>
+                                        <li><strong>自定义参数调节面板</strong>：在选择自定义预设时，可在浮动面板中通过滑块手动实时调节 <i>字号大小、标题字号、表格字号、段落行高、段落边距、单元格内衬（表格单元格 padding）</i> 尺寸。</li>
+                                        <li><strong>实时页面辅助工具</strong>：
+                                            <ul>
+                                                <li><b>物理标尺</b>：页面左侧及上方提供精确的物理厘米（cm）刻度标尺，实时感知打印后的物理排版大小。</li>
+                                                <li><b>安全裁切线</b>：在预览画面 28.5cm（临近 A4 纸底端）位置显示红色虚线。该线用于提醒打印页面的物理切割界限，若有内容刚好跨越安全线，可通过微调字号或行高进行优化，防止文字在分页处被切分。</li>
+                                            </ul>
+                                        </li>
+                                        <li><strong>输出操作</strong>：
+                                            <ul>
+                                                <li><b>打印</b>：调用系统原生打印机对话框进行纸张打印。</li>
+                                                <li><b>另存为 PDF</b>：将调整排版后的最佳效果以高分辨率另存为 PDF 文件，便于传阅和保存。</li>
+                                            </ul>
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <div class="settings-section">
+                                    <h3 class="section-title">📋 任务与收藏管理</h3>
+                                    <ul class="help-list">
+                                        <li><strong>历史管理</strong>：支持模糊检索历史任务的文件名；支持根据任务状态（等待中、处理中、已完成、失败）进行快速过滤。支持任务记录的删除与对应本地输出目录的一键直达。</li>
+                                        <li><strong>文档收藏</strong>：点击解析对比页面右上角星号（☆）即可收藏当前文档，收藏的文档将被长期保存在“我的收藏”标签内，即使清理了常规历史，亦能随时快速调阅。</li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -463,6 +602,6 @@
     <script src="/lib/katex.min.js"></script>
     
     <!-- App -->
-    <script type="module" src="/app.js"></script>
+    <script type="module" src="/app.js?v=2"></script>
 </body>
 </html>
