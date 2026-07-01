@@ -74,6 +74,9 @@ document.addEventListener('DOMContentLoaded', () => {
         settings.localVlmDir || ''
     );
 
+    // Check for any active downloads on startup
+    startModelDownloadPolling();
+
     initAppVersion();
     initRouter();
     initSidebar();
@@ -1298,6 +1301,14 @@ function initSettings() {
                 hint.textContent = '国内推荐使用 ModelScope，速度更快';
             }
         }
+    // Start download for Pipeline Model
+    document.getElementById('btnDownloadPipelineModel')?.addEventListener('click', () => {
+        startModelDownload('pipeline');
+    });
+
+    // Start download for VLM Model
+    document.getElementById('btnDownloadVlmModel')?.addEventListener('click', () => {
+        startModelDownload('vlm');
     });
 
     // Update strategy banner on load
@@ -1309,20 +1320,197 @@ function initSettings() {
 
 function toggleLocalDirFields(source) {
     const cacheContainer = document.getElementById('modelCacheDirContainer');
+    const downloadManagerContainer = document.getElementById('modelDownloadManagerContainer');
     const pipelineContainer = document.getElementById('localPipelineDirContainer');
     const vlmContainer = document.getElementById('localVlmDirContainer');
     const downloadHint = document.getElementById('localDownloadHint');
     
     if (source === 'local') {
         if (cacheContainer) cacheContainer.style.display = 'none';
+        if (downloadManagerContainer) downloadManagerContainer.style.display = 'none';
         if (pipelineContainer) pipelineContainer.style.display = 'flex';
         if (vlmContainer) vlmContainer.style.display = 'flex';
         if (downloadHint) downloadHint.style.display = 'block';
     } else {
         if (cacheContainer) cacheContainer.style.display = 'flex';
+        if (downloadManagerContainer) downloadManagerContainer.style.display = 'flex';
         if (pipelineContainer) pipelineContainer.style.display = 'none';
         if (vlmContainer) vlmContainer.style.display = 'none';
         if (downloadHint) downloadHint.style.display = 'none';
+        
+        // Check local model download status in cache
+        checkOfflineModelsStatus();
+    }
+}
+
+let modelDownloadPollIntervalId = null;
+
+async function checkOfflineModelsStatus() {
+    try {
+        const response = await fetch('/api/offline_models_status');
+        if (!response.ok) return;
+        const data = await response.json();
+        
+        const pipelineStatus = document.getElementById('pipelineModelStatus');
+        const pipelinePath = document.getElementById('pipelineModelPath');
+        const btnPipeline = document.getElementById('btnDownloadPipelineModel');
+        
+        const vlmStatus = document.getElementById('vlmModelStatus');
+        const vlmPath = document.getElementById('vlmModelPath');
+        const btnVlm = document.getElementById('btnDownloadVlmModel');
+        
+        if (data.pipeline) {
+            if (data.pipeline.downloaded) {
+                if (pipelineStatus) {
+                    pipelineStatus.textContent = '已下载';
+                    pipelineStatus.style.color = 'var(--success-color, #22c55e)';
+                }
+                if (pipelinePath) pipelinePath.textContent = data.pipeline.path;
+                if (btnPipeline) {
+                    btnPipeline.textContent = '重新下载';
+                    btnPipeline.disabled = false;
+                }
+            } else {
+                if (pipelineStatus) {
+                    pipelineStatus.textContent = '未下载';
+                    pipelineStatus.style.color = 'var(--warning-color, #eab308)';
+                }
+                if (pipelinePath) pipelinePath.textContent = '';
+                if (btnPipeline) {
+                    btnPipeline.textContent = '开始下载';
+                    btnPipeline.disabled = false;
+                }
+            }
+        }
+        
+        if (data.vlm) {
+            if (data.vlm.downloaded) {
+                if (vlmStatus) {
+                    vlmStatus.textContent = '已下载';
+                    vlmStatus.style.color = 'var(--success-color, #22c55e)';
+                }
+                if (vlmPath) vlmPath.textContent = data.vlm.path;
+                if (btnVlm) {
+                    btnVlm.textContent = '重新下载';
+                    btnVlm.disabled = false;
+                }
+            } else {
+                if (vlmStatus) {
+                    vlmStatus.textContent = '未下载';
+                    vlmStatus.style.color = 'var(--warning-color, #eab308)';
+                }
+                if (vlmPath) vlmPath.textContent = '';
+                if (btnVlm) {
+                    btnVlm.textContent = '开始下载';
+                    btnVlm.disabled = false;
+                }
+            }
+        }
+    } catch (err) {
+        console.error('Error checking offline models status:', err);
+    }
+}
+
+async function startModelDownload(modelType) {
+    const settings = getSettings();
+    const source = settings.modelSource || 'modelscope';
+    
+    // Disable buttons
+    const btnPipeline = document.getElementById('btnDownloadPipelineModel');
+    const btnVlm = document.getElementById('btnDownloadVlmModel');
+    if (btnPipeline) btnPipeline.disabled = true;
+    if (btnVlm) btnVlm.disabled = true;
+    
+    // Update status UI
+    const statusId = modelType === 'pipeline' ? 'pipelineModelStatus' : 'vlmModelStatus';
+    const statusElement = document.getElementById(statusId);
+    if (statusElement) {
+        statusElement.textContent = '正在下载...';
+        statusElement.style.color = 'var(--info-color, #3b82f6)';
+    }
+    
+    try {
+        const response = await fetch('/api/download_models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_type: modelType, source: source })
+        });
+        
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.detail || 'Failed to start download');
+        }
+        
+        showToast(`已提交 ${modelType === 'pipeline' ? 'Pipeline' : 'VLM'} 模型下载任务至后台，正在下载...`, 'success');
+        startModelDownloadPolling();
+    } catch (err) {
+        showToast('启动下载失败: ' + err.message, 'error');
+        checkOfflineModelsStatus();
+    }
+}
+
+function startModelDownloadPolling() {
+    if (modelDownloadPollIntervalId) {
+        clearInterval(modelDownloadPollIntervalId);
+    }
+    
+    // Perform initial fetch to verify status immediately
+    fetchStatusAndUpdate();
+    
+    modelDownloadPollIntervalId = setInterval(fetchStatusAndUpdate, 2000);
+    
+    async function fetchStatusAndUpdate() {
+        try {
+            const response = await fetch('/api/download_status');
+            if (!response.ok) return;
+            const data = await response.json();
+            
+            if (data.status === 'downloading') {
+                // Update download status UI
+                const modelType = data.model_type;
+                const statusId = modelType === 'pipeline' ? 'pipelineModelStatus' : 'vlmModelStatus';
+                const statusElement = document.getElementById(statusId);
+                const btnId = modelType === 'pipeline' ? 'btnDownloadPipelineModel' : 'btnDownloadVlmModel';
+                const btnElement = document.getElementById(btnId);
+                
+                if (statusElement) {
+                    statusElement.textContent = '正在下载...';
+                    statusElement.style.color = 'var(--info-color, #3b82f6)';
+                }
+                if (btnElement) {
+                    btnElement.disabled = true;
+                }
+                
+                // Disable the other button as well
+                const otherBtnId = modelType === 'pipeline' ? 'btnDownloadVlmModel' : 'btnDownloadPipelineModel';
+                const otherBtnElement = document.getElementById(otherBtnId);
+                if (otherBtnElement) otherBtnElement.disabled = true;
+                
+            } else if (data.status === 'completed') {
+                if (modelDownloadPollIntervalId) {
+                    clearInterval(modelDownloadPollIntervalId);
+                    modelDownloadPollIntervalId = null;
+                }
+                showToast('后台模型下载完成！已更新配置。', 'success');
+                checkOfflineModelsStatus();
+            } else if (data.status === 'failed') {
+                if (modelDownloadPollIntervalId) {
+                    clearInterval(modelDownloadPollIntervalId);
+                    modelDownloadPollIntervalId = null;
+                }
+                showToast('模型下载失败: ' + (data.error || '未知错误'), 'error');
+                checkOfflineModelsStatus();
+            } else {
+                // idle
+                if (modelDownloadPollIntervalId) {
+                    clearInterval(modelDownloadPollIntervalId);
+                    modelDownloadPollIntervalId = null;
+                }
+                checkOfflineModelsStatus();
+            }
+        } catch (err) {
+            console.error('Error polling model download status:', err);
+        }
     }
 }
 

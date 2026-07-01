@@ -91,6 +91,11 @@ class ModelConfigPayload(BaseModel):
     local_pipeline_dir: str = ""
     local_vlm_dir: str = ""
 
+# Pydantic model for model download
+class ModelDownloadPayload(BaseModel):
+    model_type: str  # pipeline, vlm, all
+    source: str = "auto"  # auto, huggingface, modelscope
+
 # Demo zip generation
 DEMO_ZIP_LOCK = asyncio.Lock()
 DEMO_ZIP_GENERATED = False
@@ -1642,6 +1647,100 @@ async def update_model_config(payload: ModelConfigPayload, request: Request):
         logging.error(f"[model_config] Failed to update config file at {config_file}: {exc}")
 
     return {"status": "success", "message": "Model configuration updated"}
+
+
+# Model download status tracking
+DOWNLOAD_STATUS = {
+    "status": "idle",  # idle, downloading, completed, failed
+    "model_type": "",
+    "error": "",
+}
+
+@app.get(
+    path="/api/offline_models_status",
+    status_code=200,
+    summary="Get offline models status",
+    description="Check if Pipeline and VLM model files exist locally in cache or configuration.",
+)
+async def get_offline_models_status():
+    from mineru.utils.models_download_utils import (
+        get_existing_configured_model_root
+    )
+    from mineru.utils.enum_class import ModelPath
+    
+    pipeline_root = get_existing_configured_model_root("pipeline", ModelPath.pp_doclayout_v2)
+    vlm_root = get_existing_configured_model_root("vlm", "/")
+    
+    return {
+        "pipeline": {
+            "downloaded": pipeline_root is not None,
+            "path": pipeline_root or ""
+        },
+        "vlm": {
+            "downloaded": vlm_root is not None,
+            "path": vlm_root or ""
+        }
+    }
+
+@app.get(
+    path="/api/download_status",
+    status_code=200,
+    summary="Get model download status",
+    description="Check if there is an active background download task.",
+)
+async def get_download_status():
+    return DOWNLOAD_STATUS
+
+@app.post(
+    path="/api/download_models",
+    status_code=200,
+    summary="Start model download",
+    description="Trigger a background thread to download the specified model files.",
+)
+async def download_models_api(payload: ModelDownloadPayload, background_tasks: BackgroundTasks):
+    global DOWNLOAD_STATUS
+    if DOWNLOAD_STATUS["status"] == "downloading":
+        raise HTTPException(status_code=400, detail="Another download is already in progress")
+
+    DOWNLOAD_STATUS = {
+        "status": "downloading",
+        "model_type": payload.model_type,
+        "error": "",
+    }
+
+    def run_download():
+        global DOWNLOAD_STATUS
+        try:
+            from mineru.cli.models_download import (
+                download_pipeline_models,
+                download_vlm_models,
+                get_effective_download_model_source,
+                temporary_model_source,
+            )
+            
+            effective_source = get_effective_download_model_source(payload.source)
+            logging.info(f"[download_models] Starting background download: type={payload.model_type} source={effective_source}")
+            
+            with temporary_model_source(effective_source):
+                if payload.model_type == "pipeline":
+                    download_pipeline_models(effective_source)
+                elif payload.model_type == "vlm":
+                    download_vlm_models(effective_source)
+                elif payload.model_type == "all":
+                    download_pipeline_models(effective_source)
+                    download_vlm_models(effective_source)
+                else:
+                    raise ValueError(f"Unsupported model type: {payload.model_type}")
+            
+            logging.info(f"[download_models] Completed background download: type={payload.model_type}")
+            DOWNLOAD_STATUS["status"] = "completed"
+        except Exception as exc:
+            logging.exception(f"[download_models] Error during background download: {exc}")
+            DOWNLOAD_STATUS["status"] = "failed"
+            DOWNLOAD_STATUS["error"] = str(exc)
+
+    background_tasks.add_task(run_download)
+    return {"status": "success", "message": "Model download started in background"}
 
 
 @app.get(path="/health")
