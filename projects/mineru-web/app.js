@@ -1301,6 +1301,7 @@ function initSettings() {
                 hint.textContent = '国内推荐使用 ModelScope，速度更快';
             }
         }
+    });
     // Start download for Pipeline Model
     document.getElementById('btnDownloadPipelineModel')?.addEventListener('click', () => {
         startModelDownload('pipeline');
