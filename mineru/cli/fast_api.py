@@ -71,6 +71,11 @@ from mineru.utils.config_reader import (
 from mineru.utils.guess_suffix_or_lang import guess_suffix_by_path
 from mineru.utils.pdf_image_tools import shutdown_pdf_render_executor
 from mineru.version import __version__
+from mineru.utils.models_download_utils import (
+    CONFIG_TEMPLATE_URL,
+    download_and_modify_json,
+    get_tools_config_file_path,
+)
 
 import subprocess
 import logging
@@ -81,8 +86,10 @@ class FolderOpenPayload(BaseModel):
 
 # Pydantic model for model config
 class ModelConfigPayload(BaseModel):
-    source: str = "huggingface"  # huggingface, modelscope, huggingface_mirror
+    source: str = "huggingface"  # huggingface, modelscope, huggingface_mirror, local
     cache_dir: str = ""
+    local_pipeline_dir: str = ""
+    local_vlm_dir: str = ""
 
 # Demo zip generation
 DEMO_ZIP_LOCK = asyncio.Lock()
@@ -1589,7 +1596,12 @@ async def open_folder(payload: FolderOpenPayload, request: Request):
 )
 async def update_model_config(payload: ModelConfigPayload, request: Request):
     client_ip = request.client.host if request.client else "unknown"
-    logging.info(f"[model_config] ip={client_ip} source={payload.source} cache_dir={payload.cache_dir}")
+    logging.info(
+        f"[model_config] ip={client_ip} source={payload.source} "
+        f"cache_dir={payload.cache_dir} "
+        f"local_pipeline_dir={payload.local_pipeline_dir} "
+        f"local_vlm_dir={payload.local_vlm_dir}"
+    )
 
     # Update environment variables
     if payload.source == "modelscope":
@@ -1602,9 +1614,32 @@ async def update_model_config(payload: ModelConfigPayload, request: Request):
     if payload.cache_dir:
         os.environ["HF_HOME"] = payload.cache_dir
         os.environ["TRANSFORMERS_CACHE"] = payload.cache_dir
+        os.environ["MODELSCOPE_CACHE"] = payload.cache_dir
     else:
         os.environ.pop("HF_HOME", None)
         os.environ.pop("TRANSFORMERS_CACHE", None)
+        os.environ.pop("MODELSCOPE_CACHE", None)
+
+    # Persist config changes to mineru.json
+    config_file = get_tools_config_file_path()
+    json_mods = {
+        "model-source": payload.source,
+    }
+    
+    if payload.source == "local":
+        os.environ["MINERU_MODEL_SOURCE"] = "local"
+        json_mods["models-dir"] = {
+            "pipeline": payload.local_pipeline_dir or "",
+            "vlm": payload.local_vlm_dir or "",
+        }
+    else:
+        os.environ.pop("MINERU_MODEL_SOURCE", None)
+
+    try:
+        download_and_modify_json(CONFIG_TEMPLATE_URL, config_file, json_mods)
+        logging.info(f"[model_config] Successfully updated config file at: {config_file}")
+    except Exception as exc:
+        logging.error(f"[model_config] Failed to update config file at {config_file}: {exc}")
 
     return {"status": "success", "message": "Model configuration updated"}
 

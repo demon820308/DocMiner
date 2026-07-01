@@ -31,11 +31,25 @@ function startBackend() {
       console.log(`Starting packaged backend binary: ${backendPath}`);
       pyProcess = spawn(backendPath, ['--port', PORT.toString()], { env });
     } else {
+      // Check if there is an embedded/portable Python environment in resources
+      let pythonCmd = '';
+      if (process.platform === 'win32') {
+        const localPython = path.join(process.resourcesPath, 'python', 'python.exe');
+        if (fs.existsSync(localPython)) pythonCmd = localPython;
+      } else {
+        const localPython = path.join(process.resourcesPath, 'python', 'bin', 'python3');
+        if (fs.existsSync(localPython)) pythonCmd = localPython;
+      }
+
       // Fallback: Try to run python script copied to resources
       const scriptPath = path.join(process.resourcesPath, 'mineru', 'cli', 'fast_api.py');
       if (fs.existsSync(scriptPath)) {
-        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-        console.log(`Starting bundled Python backend script: ${pythonCmd} ${scriptPath}`);
+        if (!pythonCmd) {
+          pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+          console.log(`Starting bundled Python backend script using system Python: ${pythonCmd} ${scriptPath}`);
+        } else {
+          console.log(`Starting bundled Python backend script using local Python: ${pythonCmd} ${scriptPath}`);
+        }
         pyProcess = spawn(pythonCmd, [scriptPath, '--port', PORT.toString()], { env });
       } else {
         console.log(`Neither binary nor Python script found in resources. Assuming local Python server is running separately.`);
@@ -215,6 +229,19 @@ app.on('browser-window-created', (event, window) => {
 // Get system home directory
 ipcMain.handle('get-home-dir', () => {
   return app.getPath('home');
+});
+
+// Handle select-directory IPC
+ipcMain.handle('select-directory', async (event, title) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const result = await dialog.showOpenDialog(win, {
+    title: title || '选择目录',
+    properties: ['openDirectory']
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+  return result.filePaths[0];
 });
 
 // Programmatic PDF Export handler to bypass browser printer Spooler block

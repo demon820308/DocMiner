@@ -18,6 +18,8 @@ const DEFAULT_SETTINGS = {
     userId: '-',
     modelSource: 'huggingface',
     modelCacheDir: '',
+    localPipelineDir: '',
+    localVlmDir: '',
     enableNotificationSound: true
 };
 
@@ -62,6 +64,16 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Failed to get home dir:', err);
         });
     }
+    
+    // Sync settings to backend on startup
+    const settings = getSettings();
+    applyModelSource(
+        settings.modelSource || 'huggingface', 
+        settings.modelCacheDir || '',
+        settings.localPipelineDir || '',
+        settings.localVlmDir || ''
+    );
+
     initAppVersion();
     initRouter();
     initSidebar();
@@ -409,7 +421,14 @@ function updateProgressUI(percent) {
                 prefix = '正在解析...';
             }
         }
-        loadingText.textContent = `${prefix} ${Math.floor(percent)}%`;
+        
+        const settings = getSettings();
+        let subtext = '';
+        if (settings.modelSource !== 'local') {
+            subtext = '<br><span style="font-size: 12px; color: var(--text-secondary); margin-top: 8px; display: inline-block;">(首次运行可能需要在后台下载模型 2-3GB，请耐心等待，切勿关闭程序)</span>';
+        }
+        
+        loadingText.innerHTML = `${prefix} ${Math.floor(percent)}%${subtext}`;
     }
 }
 
@@ -1214,23 +1233,67 @@ function initSettings() {
 
 
     // Change directory
-    document.getElementById('btnChangeDir').addEventListener('click', () => {
-        // In a real app, this would open a directory picker
-        showToast('目录选择功能即将上线', 'info');
+    document.getElementById('btnChangeDir').addEventListener('click', async () => {
+        if (window.electronAPI && window.electronAPI.selectDirectory) {
+            const dir = await window.electronAPI.selectDirectory('选择保存路径');
+            if (dir) {
+                document.getElementById('outputDir').textContent = dir;
+                saveSettingsFromUI();
+            }
+        } else {
+            showToast('仅在桌面客户端中支持该功能', 'info');
+        }
     });
 
     // Change model cache directory
-    document.getElementById('btnChangeModelDir')?.addEventListener('click', () => {
-        // In a real app, this would open a directory picker
-        showToast('目录选择功能即将上线', 'info');
+    document.getElementById('btnChangeModelDir')?.addEventListener('click', async () => {
+        if (window.electronAPI && window.electronAPI.selectDirectory) {
+            const dir = await window.electronAPI.selectDirectory('选择自定义缓存目录');
+            if (dir) {
+                document.getElementById('modelCacheDir').value = dir;
+                saveSettingsFromUI();
+            }
+        } else {
+            showToast('仅在桌面客户端中支持该功能', 'info');
+        }
     });
 
-    // Model source change - show hint
+    // Change local pipeline model directory
+    document.getElementById('btnChangeLocalPipelineDir')?.addEventListener('click', async () => {
+        if (window.electronAPI && window.electronAPI.selectDirectory) {
+            const dir = await window.electronAPI.selectDirectory('选择本地 Pipeline 模型目录');
+            if (dir) {
+                document.getElementById('localPipelineDir').value = dir;
+                saveSettingsFromUI();
+            }
+        } else {
+            showToast('仅在桌面客户端中支持该功能', 'info');
+        }
+    });
+
+    // Change local VLM model directory
+    document.getElementById('btnChangeLocalVlmDir')?.addEventListener('click', async () => {
+        if (window.electronAPI && window.electronAPI.selectDirectory) {
+            const dir = await window.electronAPI.selectDirectory('选择本地 VLM 模型目录');
+            if (dir) {
+                document.getElementById('localVlmDir').value = dir;
+                saveSettingsFromUI();
+            }
+        } else {
+            showToast('仅在桌面客户端中支持该功能', 'info');
+        }
+    });
+
+    // Model source change - show hint & toggle local path fields
     document.getElementById('modelSource')?.addEventListener('change', (e) => {
+        const source = e.target.value;
+        toggleLocalDirFields(source);
         const hint = document.querySelector('.setting-hint .hint-text');
         if (hint) {
-            if (e.target.value === 'modelscope') {
+            if (source === 'modelscope') {
                 hint.textContent = '已选择 ModelScope，国内下载速度更快';
+            } else if (source === 'local') {
+                hint.textContent = '已选择本地模型，请指定模型所在的本地目录';
             } else {
                 hint.textContent = '国内推荐使用 ModelScope，速度更快';
             }
@@ -1242,6 +1305,25 @@ function initSettings() {
 
     // Initialize software update logic
     initUpdateLogic();
+}
+
+function toggleLocalDirFields(source) {
+    const cacheContainer = document.getElementById('modelCacheDirContainer');
+    const pipelineContainer = document.getElementById('localPipelineDirContainer');
+    const vlmContainer = document.getElementById('localVlmDirContainer');
+    const downloadHint = document.getElementById('localDownloadHint');
+    
+    if (source === 'local') {
+        if (cacheContainer) cacheContainer.style.display = 'none';
+        if (pipelineContainer) pipelineContainer.style.display = 'flex';
+        if (vlmContainer) vlmContainer.style.display = 'flex';
+        if (downloadHint) downloadHint.style.display = 'block';
+    } else {
+        if (cacheContainer) cacheContainer.style.display = 'flex';
+        if (pipelineContainer) pipelineContainer.style.display = 'none';
+        if (vlmContainer) vlmContainer.style.display = 'none';
+        if (downloadHint) downloadHint.style.display = 'none';
+    }
 }
 
 function loadSettingsToUI() {
@@ -1270,6 +1352,10 @@ function loadSettingsToUI() {
     // Model download settings
     document.getElementById('modelSource').value = settings.modelSource || 'huggingface';
     document.getElementById('modelCacheDir').value = settings.modelCacheDir || '';
+    document.getElementById('localPipelineDir').value = settings.localPipelineDir || '';
+    document.getElementById('localVlmDir').value = settings.localVlmDir || '';
+    
+    toggleLocalDirFields(settings.modelSource || 'huggingface');
 }
 
 function saveSettingsFromUI() {
@@ -1283,13 +1369,15 @@ function saveSettingsFromUI() {
         userId: document.getElementById('userId').textContent,
         modelSource: document.getElementById('modelSource').value,
         modelCacheDir: document.getElementById('modelCacheDir').value,
+        localPipelineDir: document.getElementById('localPipelineDir').value,
+        localVlmDir: document.getElementById('localVlmDir').value,
         enableNotificationSound: document.getElementById('enableNotificationSound').checked
     };
 
     saveSettings(settings);
 
     // Apply model source to environment
-    applyModelSource(settings.modelSource, settings.modelCacheDir);
+    applyModelSource(settings.modelSource, settings.modelCacheDir, settings.localPipelineDir, settings.localVlmDir);
 
     // Update strategy banner
     updateStrategyBanner(settings);
@@ -1557,17 +1645,24 @@ function initUpdateLogic() {
     }
 }
 
-async function applyModelSource(source, cacheDir) {
+async function applyModelSource(source, cacheDir, localPipelineDir, localVlmDir) {
     // Store in localStorage for backend to read
     localStorage.setItem('mineru.modelSource', source);
     localStorage.setItem('mineru.modelCacheDir', cacheDir || '');
+    localStorage.setItem('mineru.localPipelineDir', localPipelineDir || '');
+    localStorage.setItem('mineru.localVlmDir', localVlmDir || '');
 
     // Update backend configuration
     try {
         const response = await fetch('/api/model_config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source, cache_dir: cacheDir || '' })
+            body: JSON.stringify({ 
+                source, 
+                cache_dir: cacheDir || '',
+                local_pipeline_dir: localPipelineDir || '',
+                local_vlm_dir: localVlmDir || ''
+            })
         });
 
         if (!response.ok) {

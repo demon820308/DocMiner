@@ -425,24 +425,50 @@
                                 </div>
                             </div>
                             <div class="settings-section">
-                                <h3 class="section-title">模型下载</h3>
+                                <h3 class="section-title">模型下载与路径</h3>
                                 <div class="setting-item">
                                     <label class="setting-label">下载源</label>
                                     <select id="modelSource" class="setting-select">
                                         <option value="huggingface">HuggingFace</option>
                                         <option value="modelscope">ModelScope</option>
+                                        <option value="local">本地模型 (Local)</option>
                                     </select>
                                 </div>
-                                <div class="setting-item">
+                                <div class="setting-item" id="modelCacheDirContainer">
                                     <label class="setting-label">自定义缓存目录</label>
                                     <div class="setting-value">
                                         <input type="text" id="modelCacheDir" class="setting-input" placeholder="留空使用默认路径">
                                         <button class="btn btn-sm" id="btnChangeModelDir">选择</button>
                                     </div>
                                 </div>
+                                <div class="setting-item" id="localPipelineDirContainer" style="display: none;">
+                                    <label class="setting-label">Pipeline模型目录</label>
+                                    <div class="setting-value">
+                                        <input type="text" id="localPipelineDir" class="setting-input" placeholder="请选择本地 Pipeline 模型目录">
+                                        <button class="btn btn-sm" id="btnChangeLocalPipelineDir">选择</button>
+                                    </div>
+                                </div>
+                                <div class="setting-item" id="localVlmDirContainer" style="display: none;">
+                                    <label class="setting-label">VLM模型目录</label>
+                                    <div class="setting-value">
+                                        <input type="text" id="localVlmDir" class="setting-input" placeholder="请选择本地 VLM 模型目录">
+                                        <button class="btn btn-sm" id="btnChangeLocalVlmDir">选择</button>
+                                    </div>
+                                </div>
                                 <div class="setting-hint">
                                     <span class="hint-icon">💡</span>
-                                    <span class="hint-text">国内推荐使用 ModelScope，速度更快</span>
+                                    <span class="hint-text">国内推荐使用 ModelScope，速度更快。选择“本地模型”可手动下载导入模型离线运行。</span>
+                                </div>
+                                <div class="setting-hint" id="localDownloadHint" style="display: none; margin-top: 10px; padding: 10px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 12px; line-height: 1.6;">
+                                    <strong>手动下载指引：</strong><br>
+                                    1. <strong>Pipeline 模型：</strong><br>
+                                    - <a href="#" onclick="window.electronAPI.openExternal('https://www.modelscope.cn/models/OpenDataLab/PDF-Extract-Kit-1.0')">ModelScope 下载 (国内推荐)</a> / 
+                                      <a href="#" onclick="window.electronAPI.openExternal('https://huggingface.co/opendatalab/PDF-Extract-Kit-1.0')">HuggingFace 下载</a><br>
+                                    - 下载后解压，并在上方指定其解压根目录（如目录内应包含 <code>models/Layout</code>、<code>models/OCR</code> 等）。<br>
+                                    2. <strong>VLM 模型：</strong><br>
+                                    - <a href="#" onclick="window.electronAPI.openExternal('https://www.modelscope.cn/models/OpenDataLab/MinerU2.5-Pro-2605-1.2B')">MinerU2.5-Pro (ModelScope)</a> / 
+                                      <a href="#" onclick="window.electronAPI.openExternal('https://huggingface.co/opendatalab/MinerU2.5-Pro-2605-1.2B')">MinerU2.5-Pro (HuggingFace)</a><br>
+                                    - 下载后解压，并在上方指定其对应的 VLM 根目录。
                                 </div>
                             </div>
                         </div>
