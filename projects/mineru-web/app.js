@@ -57,6 +57,10 @@ let currentImageBlob = null;
 let currentRenderTask = null;
 let currentMdContent = '';
 let homeDir = '';
+let offlineModelsDownloaded = {
+    pipeline: false,
+    vlm: false
+};
 
 // ==================== DOM Ready ====================
 document.addEventListener('DOMContentLoaded', () => {
@@ -82,6 +86,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Check for any active downloads on startup
     startModelDownloadPolling();
+    
+    // Check offline models status on startup
+    checkOfflineModelsStatus();
 
     initAppVersion();
     initRouter();
@@ -434,7 +441,18 @@ function updateProgressUI(percent) {
         const settings = getSettings();
         let subtext = '';
         if (settings.modelSource !== 'local') {
-            subtext = '<br><span style="font-size: 12px; color: var(--text-secondary); margin-top: 8px; display: inline-block;">(首次运行可能需要在后台下载模型 2-3GB，请耐心等待，切勿关闭程序)</span>';
+            let isDownloaded = false;
+            if (settings.modelVersion === 'vlm') {
+                isDownloaded = offlineModelsDownloaded.vlm;
+            } else if (settings.modelVersion === 'hybrid') {
+                isDownloaded = offlineModelsDownloaded.pipeline && offlineModelsDownloaded.vlm;
+            } else {
+                isDownloaded = offlineModelsDownloaded.pipeline;
+            }
+            
+            if (!isDownloaded) {
+                subtext = '<br><span style="font-size: 12px; color: var(--text-secondary); margin-top: 8px; display: inline-block;">(首次运行可能需要在后台下载模型 2-3GB，请耐心等待，切勿关闭程序)</span>';
+            }
         }
         
         loadingText.innerHTML = `${prefix} ${Math.floor(percent)}%${subtext}`;
@@ -1451,6 +1469,7 @@ async function checkOfflineModelsStatus() {
         const btnVlm = document.getElementById('btnDownloadVlmModel');
         
         if (data.pipeline) {
+            offlineModelsDownloaded.pipeline = data.pipeline.downloaded;
             if (data.pipeline.downloaded) {
                 if (pipelineStatus) {
                     pipelineStatus.textContent = '已下载';
@@ -1477,6 +1496,7 @@ async function checkOfflineModelsStatus() {
         }
         
         if (data.vlm) {
+            offlineModelsDownloaded.vlm = data.vlm.downloaded;
             if (data.vlm.downloaded) {
                 if (vlmStatus) {
                     vlmStatus.textContent = '已下载';
@@ -1836,6 +1856,11 @@ function updateStrategyBanner(settings) {
         default:
             desc = '当前模式：Pipeline（OCR + 版面分析 + 公式识别）';
     }
+    
+    if (settings.llmEnable) {
+        desc += ' + LLM 辅助解析';
+    }
+    
     bannerDesc.textContent = desc;
 }
 
