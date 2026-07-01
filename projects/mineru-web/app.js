@@ -1324,20 +1324,17 @@ function toggleLocalDirFields(source) {
     const downloadManagerContainer = document.getElementById('modelDownloadManagerContainer');
     const pipelineContainer = document.getElementById('localPipelineDirContainer');
     const vlmContainer = document.getElementById('localVlmDirContainer');
-    const downloadHint = document.getElementById('localDownloadHint');
     
     if (source === 'local') {
         if (cacheContainer) cacheContainer.style.display = 'none';
         if (downloadManagerContainer) downloadManagerContainer.style.display = 'none';
         if (pipelineContainer) pipelineContainer.style.display = 'flex';
         if (vlmContainer) vlmContainer.style.display = 'flex';
-        if (downloadHint) downloadHint.style.display = 'block';
     } else {
         if (cacheContainer) cacheContainer.style.display = 'flex';
         if (downloadManagerContainer) downloadManagerContainer.style.display = 'flex';
         if (pipelineContainer) pipelineContainer.style.display = 'none';
         if (vlmContainer) vlmContainer.style.display = 'none';
-        if (downloadHint) downloadHint.style.display = 'none';
         
         // Check local model download status in cache
         checkOfflineModelsStatus();
@@ -1371,6 +1368,15 @@ async function checkOfflineModelsStatus() {
                     btnPipeline.textContent = '重新下载';
                     btnPipeline.disabled = false;
                 }
+                
+                // Auto-fill local input if empty
+                const localPipelineInput = document.getElementById('localPipelineDir');
+                if (localPipelineInput && !localPipelineInput.value && data.pipeline.path) {
+                    localPipelineInput.value = data.pipeline.path;
+                    const settings = getSettings();
+                    settings.localPipelineDir = data.pipeline.path;
+                    saveSettings(settings);
+                }
             } else {
                 if (pipelineStatus) {
                     pipelineStatus.textContent = '未下载';
@@ -1394,6 +1400,15 @@ async function checkOfflineModelsStatus() {
                 if (btnVlm) {
                     btnVlm.textContent = '重新下载';
                     btnVlm.disabled = false;
+                }
+                
+                // Auto-fill local input if empty
+                const localVlmInput = document.getElementById('localVlmDir');
+                if (localVlmInput && !localVlmInput.value && data.vlm.path) {
+                    localVlmInput.value = data.vlm.path;
+                    const settings = getSettings();
+                    settings.localVlmDir = data.vlm.path;
+                    saveSettings(settings);
                 }
             } else {
                 if (vlmStatus) {
