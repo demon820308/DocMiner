@@ -1254,6 +1254,9 @@ function loadSettingsToUI() {
     if (displayDir.startsWith('~/')) {
         displayDir = homeDir ? displayDir.replace('~', homeDir) : displayDir;
     }
+    if (navigator.userAgent.includes('Windows')) {
+        displayDir = displayDir.replace(/\//g, '\\');
+    }
     document.getElementById('outputDir').textContent = displayDir;
 
     // Params settings
