@@ -61,3 +61,5 @@ output/
 # DocMiner Desktop web project dependencies & builds
 projects/mineru-web/node_modules/
 projects/mineru-web/dist/
+projects/mineru-web/python/*
+!projects/mineru-web/python/.gitkeep

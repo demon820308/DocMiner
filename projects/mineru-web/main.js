@@ -9,12 +9,20 @@ const PORT = 6060;
 const URL = `http://127.0.0.1:${PORT}`;
 
 function startBackend() {
+  const fs = require('fs');
   const isPackaged = app.isPackaged;
+  const rootDir = path.join(__dirname, '..', '..');
+  
+  // Set PYTHONPATH so the interpreter can find the mineru package
+  const pythonPath = isPackaged ? process.resourcesPath : rootDir;
   const env = { 
     ...process.env, 
     PYTHONIOENCODING: 'utf-8', 
     PYTHONUTF8: '1',
-    TQDM_ASCII: 'True'
+    TQDM_ASCII: 'True',
+    PYTHONPATH: process.env.PYTHONPATH 
+      ? `${pythonPath}${path.delimiter}${process.env.PYTHONPATH}` 
+      : pythonPath
   };
   
   if (isPackaged) {
@@ -26,7 +34,6 @@ function startBackend() {
       backendPath = path.join(process.resourcesPath, 'backend', 'fast_api');
     }
     
-    const fs = require('fs');
     if (fs.existsSync(backendPath)) {
       console.log(`Starting packaged backend binary: ${backendPath}`);
       pyProcess = spawn(backendPath, ['--port', PORT.toString()], { env });
@@ -56,12 +63,25 @@ function startBackend() {
       }
     }
   } else {
-    // In development, run the local python script using the system python interpreter
-    const rootDir = path.join(__dirname, '..', '..');
+    // In development, run the local python script using the local or system python interpreter
     const scriptPath = path.join(rootDir, 'mineru', 'cli', 'fast_api.py');
-    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
     
-    console.log(`Starting local Python backend: ${pythonCmd} ${scriptPath}`);
+    let pythonCmd = '';
+    if (process.platform === 'win32') {
+      const devPython = path.join(__dirname, 'python', 'python.exe');
+      if (fs.existsSync(devPython)) pythonCmd = devPython;
+    } else {
+      const devPython = path.join(__dirname, 'python', 'bin', 'python3');
+      if (fs.existsSync(devPython)) pythonCmd = devPython;
+    }
+    
+    if (!pythonCmd) {
+      pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+      console.log(`Starting local Python backend using system Python: ${pythonCmd} ${scriptPath}`);
+    } else {
+      console.log(`Starting local Python backend using local Python: ${pythonCmd} ${scriptPath}`);
+    }
+    
     pyProcess = spawn(pythonCmd, [scriptPath, '--port', PORT.toString()], {
       cwd: rootDir,
       env: env

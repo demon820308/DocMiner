@@ -41,6 +41,16 @@
           "!**/*.pyc",
           "!**/__pycache__"
         ]
+      },
+      {
+        "from": "python",
+        "to": "python",
+        "filter": [
+          "**/*",
+          "!**/*.pyc",
+          "!**/__pycache__",
+          "!temp_download/**/*"
+        ]
       }
     ],
     "win": {
