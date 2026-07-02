@@ -3242,9 +3242,12 @@ function printMarkdownToPdf() {
                         background: #fff !important;
                         padding-top: 0 !important;
                         padding-bottom: 0 !important;
+                        min-height: 0 !important;
                     }
                     .print-preview-container {
                         width: 210mm !important;
+                        min-height: 0 !important;
+                        height: auto !important;
                         box-shadow: none !important;
                         margin: 0 !important;
                         border-radius: 0 !important;
